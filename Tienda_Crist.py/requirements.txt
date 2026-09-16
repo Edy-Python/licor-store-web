@@ -1,0 +1,4 @@
+flet
+mysql-connector-python
+pandas
+openpyxl
