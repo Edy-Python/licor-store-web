@@ -81,16 +81,42 @@ def main(page: ft.Page):
         lbl_total_usd.value = f"$ {t_usd:.2f}"
         page.update()
 
-    def eliminar_fila(row):
-        tabla_carrito.rows.remove(row)
-        actualizar_totales()
-
+    def eliminar_fila(fila_a_borrar):
+        if fila_a_borrar in tabla_carrito.rows:
+            tabla_carrito.rows.remove(fila_a_borrar)
+            tabla_carrito.update()
+            actualizar_totales()
+            
     def seleccionar_autocompletado(nombre):
         input_buscar.value = nombre
         lista_resultados.visible = False
         page.update()
 
     def buscar_dinamico(e):
+        busqueda = input_buscar.value.strip()
+        lista_resultados.controls.clear()
+        
+        if len(busqueda) < 2:
+            lista_resultados.visible = False
+            page.update()
+            return
+            
+        try:
+            with obtener_cursor() as cursor:
+                cursor.execute("SELECT nombre FROM productos WHERE nombre LIKE %s LIMIT 50", (f"%{busqueda}%",))
+                resultados = cursor.fetchall()  
+
+            if resultados:
+                lista_resultados.visible = True
+                for fila in resultados:
+                    lista_resultados.controls.append(ft.ListTile(title=ft.Text(fila[0]), on_click=lambda e, n=fila[0]: seleccionar_autocompletado(n)))
+            else:
+                lista_resultados.visible = False
+
+            page.update()
+        except Exception as ex:
+
+            print(f"Error en búsqueda dinámica: {ex}")
         busqueda = input_buscar.value.strip()
         lista_resultados.controls.clear()
         
@@ -160,16 +186,31 @@ def main(page: ft.Page):
                     ft.DataCell(ft.Container(content=ft.Text(str(nombre)), width=120)),
                     ft.DataCell(ft.Text(str(pres))),
                     ft.DataCell(ft.Text(empaque)),
-                    ft.DataCell(ft.Text(str(cant_ingresada))), # 3. Se inyecta la cantidad real
+                    ft.DataCell(ft.Text(str(cant_ingresada))),
                     ft.DataCell(ft.Text(f"{precio_final:.2f}")),
                     ft.DataCell(ft.Text(f"{sub_pen:.2f}")),
                     ft.DataCell(ft.Text(f"{sub_usd:.2f}"))
                 ])
                 
-                btn_eliminar = ft.IconButton(icon=ft.icons.DELETE, icon_color=ft.colors.RED, on_click=lambda e, r=nueva_fila: eliminar_fila(r))
-                nueva_fila.cells.append(ft.DataCell(btn_eliminar))
+                # 1. Creamos el evento apuntando al 'data' del botón
+                def accion_borrar_carrito(e):
+                    fila = e.control.data
+                    if fila in tabla_carrito.rows:
+                        tabla_carrito.rows.remove(fila)
+                        tabla_carrito.update()  # Forzamos refresco directo de la tabla
+                        actualizar_totales()
+
+                # 2. Inyectamos la fila entera en la propiedad 'data'
+                btn_eliminar = ft.IconButton(
+                    icon=ft.icons.DELETE, 
+                    icon_color=ft.colors.RED, 
+                    data=nueva_fila, 
+                    on_click=accion_borrar_carrito
+                )
                 
+                nueva_fila.cells.append(ft.DataCell(btn_eliminar))
                 tabla_carrito.rows.append(nueva_fila)
+                tabla_carrito.update()
                 
                 input_buscar.value = ""
                 input_cantidad.value = "1" # Reiniciamos a 1 para el siguiente producto
@@ -1129,47 +1170,115 @@ def main(page: ft.Page):
             page.snack_bar.open = True
             page.update()
 
+    def anular_venta(id_v, cod_ticket):
+        def confirmar_anulacion(e):
+            try:
+                with obtener_cursor(commit=True) as cursor:
+                    # 1. Cambiamos el estado de la venta
+                    cursor.execute("UPDATE ventas SET estado = 'Anulada' WHERE id_venta = %s", (id_v,))
+                    
+                    # 2. Buscamos qué productos se vendieron para devolver el stock
+                    cursor.execute("SELECT id_producto, cantidad, tipo_empaque FROM detalles_venta WHERE id_venta = %s", (id_v,))
+                    detalles = cursor.fetchall()
+                    multiplicadores = {"Unidad": 1, "Six-pack": 6, "Caja": 12, "Plancha": 24}
+                    
+                    for det in detalles:
+                        id_p, cant, emp = det
+                        devolucion = cant * multiplicadores.get(emp, 1)
+                        cursor.execute("UPDATE productos SET stock = stock + %s WHERE id_producto = %s", (devolucion, id_p))
+                
+                dialogo_anular.open = False
+                cargar_ventas_diarias() # Refresca la tabla
+                cargar_datos_inventario() # Refresca el inventario de fondo
+                
+                page.snack_bar = ft.SnackBar(ft.Text(f"Ticket {cod_ticket} anulado y stock devuelto.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.ORANGE)
+                page.snack_bar.open = True
+                page.update()
+            except Exception as ex:
+                print(f"Error anulando: {ex}")
+                page.snack_bar = ft.SnackBar(ft.Text("Error al procesar la anulación.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
+                page.snack_bar.open = True
+                page.update()
+
+        dialogo_anular = ft.AlertDialog(
+            title=ft.Text("Confirmar Anulación", color=ft.colors.RED, weight=ft.FontWeight.BOLD),
+            content=ft.Text(f"¿Estás seguro de anular la venta {cod_ticket}?\n\nEl stock de estos productos se devolverá automáticamente a tu inventario."),
+            actions=[
+                ft.TextButton("Cancelar", on_click=lambda e: setattr(dialogo_anular, 'open', False) or page.update()),
+                ft.ElevatedButton("Anular Venta", bgcolor=ft.colors.RED, color=ft.colors.WHITE, on_click=confirmar_anulacion)
+            ]
+        )
+        page.overlay.append(dialogo_anular)
+        dialogo_anular.open = True
+        page.update()
+
     def cargar_ventas_diarias():
         tabla_ventas_diarias.rows.clear()
+        
+        # --- FUNCIONES DE EVENTO SEPARADAS ---
+        def clic_ver(e):
+            id_v, cod = e.control.data
+            ver_nota_venta(id_v, cod)
+
+        def clic_pdf(e):
+            id_v, cod = e.control.data
+            exportar_ticket_pdf(id_v, cod)
+
+        def clic_anular(e):
+            id_v, cod = e.control.data
+            solicitar_password(lambda: anular_venta(id_v, cod))
+        # -------------------------------------
+
         try:
             with obtener_cursor() as cursor:
-                cursor.execute("SELECT id_venta, codigo_ticket, hora_emision, cliente_nombre, total_pen, total_usd FROM ventas WHERE fecha_emision = CURDATE() ORDER BY id_venta DESC")
+                fecha_hoy = datetime.date.today()
+                cursor.execute("SELECT id_venta, codigo_ticket, hora_emision, cliente_nombre, total_pen, total_usd, estado FROM ventas WHERE fecha_emision = %s ORDER BY id_venta DESC", (fecha_hoy,))
                 filas = cursor.fetchall()
 
             for fila in filas:
-                id_v, cod, hora, cliente, t_pen, t_usd = fila
-                btn_ver = ft.IconButton(ft.icons.VISIBILITY, icon_color=ft.colors.BLUE, tooltip="Ver Ticket", on_click=lambda e, i=id_v, c=cod: ver_nota_venta(i, c))
-                btn_imprimir = ft.IconButton(ft.icons.PRINT, icon_color=ft.colors.GREEN, tooltip="Imprimir")
-                btn_pdf = ft.IconButton(ft.icons.PICTURE_AS_PDF, icon_color=ft.colors.RED, tooltip="Descargar PDF", on_click=lambda e, i=id_v, c=cod: exportar_ticket_pdf(i, c))
-                acciones = ft.Row([btn_ver, btn_imprimir, btn_pdf], spacing=0)
+                id_v, cod, hora, cliente, t_pen, t_usd, estado = fila
+                
+                es_anulada = (estado == "Anulada")
+                color_texto = ft.colors.RED if es_anulada else ft.colors.BLACK
+                texto_cliente = f"{cliente} (ANULADO)" if es_anulada else (cliente if cliente else "VARIOS")
+
+                # Los botones ahora usan la propiedad 'data' en lugar de lambdas
+                btn_ver = ft.IconButton(ft.icons.VISIBILITY, icon_color=ft.colors.BLUE, tooltip="Ver Ticket", data=(id_v, cod), on_click=clic_ver)
+                btn_imprimir = ft.IconButton(ft.icons.PRINT, icon_color=ft.colors.GREEN, tooltip="Imprimir", data=(id_v, cod), on_click=clic_pdf)
+                btn_pdf = ft.IconButton(ft.icons.PICTURE_AS_PDF, icon_color=ft.colors.RED, tooltip="Descargar PDF", data=(id_v, cod), on_click=clic_pdf)
+                btn_anular = ft.IconButton(ft.icons.CANCEL, icon_color=ft.colors.GREY if es_anulada else ft.colors.RED, disabled=es_anulada, data=(id_v, cod), on_click=clic_anular)
+                
+                acciones = ft.Row([btn_ver, btn_imprimir, btn_pdf, btn_anular], spacing=0)
                 
                 tabla_ventas_diarias.rows.append(ft.DataRow(cells=[
-                    ft.DataCell(ft.Text(cod)),
-                    ft.DataCell(ft.Text(str(hora))),
-                    ft.DataCell(ft.Text(cliente if cliente else "VARIOS")),
-                    ft.DataCell(ft.Text(f"{t_pen:.2f}")),
-                    ft.DataCell(ft.Text(f"{t_usd:.2f}")),
+                    ft.DataCell(ft.Text(cod, color=color_texto)), 
+                    ft.DataCell(ft.Text(str(hora), color=color_texto)),
+                    ft.DataCell(ft.Text(texto_cliente, color=color_texto, weight=ft.FontWeight.BOLD if es_anulada else ft.FontWeight.NORMAL)),
+                    ft.DataCell(ft.Text(f"{t_pen:.2f}", color=color_texto)),
+                    ft.DataCell(ft.Text(f"{t_usd:.2f}", color=color_texto)),
                     ft.DataCell(acciones)
                 ]))
+                
+            tabla_ventas_diarias.update() # Refrescamos la tabla directamente
             page.update()
         except Exception as e:
             print(f"Error cargando ventas: {e}")
-            page.snack_bar = ft.SnackBar(ft.Text("No se pudieron cargar las ventas del día.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
+            page.snack_bar = ft.SnackBar(ft.Text("No se pudieron cargar las ventas.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
             page.snack_bar.open = True
             page.update()
 
     def cuadrar_caja_diaria(e):
         try:
             with obtener_cursor() as cursor:
-                # Sumamos las columnas de totales filtrando solo la fecha de hoy
+                fecha_hoy = datetime.date.today()
+                # Excluimos los tickets anulados para que no inflen tus ganancias
                 cursor.execute("""
                     SELECT SUM(total_pen), SUM(total_usd), COUNT(id_venta) 
                     FROM ventas 
-                    WHERE fecha_emision = CURDATE()
-                """)
+                    WHERE fecha_emision = %s AND estado != 'Anulada'
+                """, (fecha_hoy,))
                 resultado = cursor.fetchone()
             
-            # Asignamos 0 si es que no hay ventas en el día para evitar errores
             total_pen = resultado[0] if resultado[0] else 0.00
             total_usd = resultado[1] if resultado[1] else 0.00
             cantidad_tickets = resultado[2] if resultado[2] else 0
@@ -1178,11 +1287,10 @@ def main(page: ft.Page):
                 dialogo_cuadre.open = False
                 page.update()
             
-            # Creamos la ventana emergente con los montos en grande
             dialogo_cuadre = ft.AlertDialog(
                 title=ft.Text("Cuadre de Caja Diaria", weight=ft.FontWeight.BOLD, color="#F39C12"),
                 content=ft.Column([
-                    ft.Text(f"Tickets emitidos hoy: {cantidad_tickets}", size=16),
+                    ft.Text(f"Tickets Válidos Emitidos Hoy: {cantidad_tickets}", size=16),
                     ft.Divider(),
                     ft.Text(f"Total Ingresos (S/): {total_pen:.2f}", size=22, weight=ft.FontWeight.BOLD, color=ft.colors.GREEN),
                     ft.Text(f"Total Ingresos ($): {total_usd:.2f}", size=22, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE),
@@ -1336,4 +1444,4 @@ def main(page: ft.Page):
     page.add(vista_login, vista_dashboard)
 
 # EJECUCIÓN WEB
-ft.app(target=main, view=ft.AppView.WEB_BROWSER, assets_dir="assets", port=int(os.getenv("PORT", 8080)), host="0.0.0.0")
+ft.app(target=main, view=ft.AppView.WEB_BROWSER, assets_dir="assets", port=int(os.getenv("PORT", 8080)))
