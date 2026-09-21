@@ -344,8 +344,9 @@ def main(page: ft.Page):
             codigo_ticket = f"NV-{total_registros + 1:08d}"
 
             # 2. Capturar Metadatos
-            fecha_actual = datetime.date.today()
-            hora_actual = datetime.datetime.now().time()
+            ahora_local = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5)))
+            fecha_actual = ahora_local.date()
+            hora_actual = ahora_local.time()
             vendedor_actual = page.rol_usuario.upper() if hasattr(page, 'rol_usuario') and page.rol_usuario else "ADMINISTRADOR"
             obs = input_observacion.value.strip() if input_observacion.value else "Sin observaciones"
 
@@ -1143,7 +1144,7 @@ def main(page: ft.Page):
 
         try:
             with obtener_cursor() as cursor:
-                fecha_hoy = datetime.date.today()
+                fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
                 cursor.execute("SELECT id_venta, codigo_ticket, hora_emision, cliente_nombre, total_pen, total_usd, estado FROM ventas WHERE fecha_emision = %s ORDER BY id_venta DESC", (fecha_hoy,))
                 filas = cursor.fetchall()
 
@@ -1180,7 +1181,7 @@ def main(page: ft.Page):
     def cuadrar_caja_diaria(e):
         try:
             with obtener_cursor() as cursor:
-                fecha_hoy = datetime.date.today()
+                fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
                 # Excluimos los tickets anulados para que no inflen tus ganancias
                 cursor.execute("""
                     SELECT SUM(total_pen), SUM(total_usd), COUNT(id_venta) 
