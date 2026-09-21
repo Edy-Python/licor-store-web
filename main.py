@@ -44,15 +44,13 @@ def main(page: ft.Page):
         hash_admin = USUARIOS["admin@likio.com"]["password_hash"]
     
         if hash_ingresado == hash_admin:
-            dialogo_seguridad.open = False
+            page.close(dialogo_seguridad)
             input_pass_seguridad.value = ""
             page.update()
             if accion_guardada[0]:
                 accion_guardada[0]() 
         else:
-            page.snack_bar = ft.SnackBar(ft.Text("❌ Contraseña incorrecta", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("❌ Contraseña incorrecta", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
     
     dialogo_seguridad = ft.AlertDialog(
         title=ft.Text("Verificación de Seguridad", weight=ft.FontWeight.BOLD),
@@ -61,7 +59,7 @@ def main(page: ft.Page):
             input_pass_seguridad
         ], tight=True),
         actions=[
-            ft.TextButton("Cancelar", on_click=lambda e: setattr(dialogo_seguridad, 'open', False) or page.update()),
+            ft.TextButton("Cancelar", on_click=lambda e: page.close(dialogo_seguridad)),
             ft.ElevatedButton("Verificar", bgcolor=ft.colors.RED, color=ft.colors.WHITE, on_click=confirmar_seguridad)
         ]
     )
@@ -69,10 +67,7 @@ def main(page: ft.Page):
     def solicitar_password(accion):
         accion_guardada[0] = accion
         input_pass_seguridad.value = ""
-        if dialogo_seguridad not in page.overlay:
-            page.overlay.append(dialogo_seguridad)
-        dialogo_seguridad.open = True
-        page.update()
+        page.open(dialogo_seguridad)
 
     def actualizar_totales():
         t_pen = sum(float(row.cells[6].content.value) for row in tabla_carrito.rows)
@@ -93,30 +88,6 @@ def main(page: ft.Page):
         page.update()
 
     def buscar_dinamico(e):
-        busqueda = input_buscar.value.strip()
-        lista_resultados.controls.clear()
-        
-        if len(busqueda) < 2:
-            lista_resultados.visible = False
-            page.update()
-            return
-            
-        try:
-            with obtener_cursor() as cursor:
-                cursor.execute("SELECT nombre FROM productos WHERE nombre LIKE %s LIMIT 50", (f"%{busqueda}%",))
-                resultados = cursor.fetchall()  
-
-            if resultados:
-                lista_resultados.visible = True
-                for fila in resultados:
-                    lista_resultados.controls.append(ft.ListTile(title=ft.Text(fila[0]), on_click=lambda e, n=fila[0]: seleccionar_autocompletado(n)))
-            else:
-                lista_resultados.visible = False
-
-            page.update()
-        except Exception as ex:
-
-            print(f"Error en búsqueda dinámica: {ex}")
         busqueda = input_buscar.value.strip()
         lista_resultados.controls.clear()
         
@@ -218,15 +189,11 @@ def main(page: ft.Page):
                 lista_resultados.visible = False
                 actualizar_totales()
             else:
-                page.snack_bar = ft.SnackBar(ft.Text("Producto no encontrado."), bgcolor=ft.colors.RED)
-                page.snack_bar.open = True
-                page.update()
+                page.open(ft.SnackBar(ft.Text("Producto no encontrado."), bgcolor=ft.colors.RED))
 
         except Exception as ex:
             print(f"Error al agregar al carrito: {ex}")
-            page.snack_bar = ft.SnackBar(ft.Text("Error al agregar el producto.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("Error al agregar el producto.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def ver_nota_venta(id_venta_reciente, codigo_ticket):
         try:
@@ -305,8 +272,7 @@ def main(page: ft.Page):
                 elementos_finales.append(ft.Text(leyenda_usd, size=11, italic=True, text_align=ft.TextAlign.RIGHT, width=float('inf')))
 
             def cerrar_ticket(e):
-                dialogo_ticket.open = False
-                page.update()
+                page.close(dialogo_ticket)
 
             dialogo_ticket = ft.AlertDialog(
                 content=ft.Container(
@@ -332,21 +298,15 @@ def main(page: ft.Page):
                 ]
             )
                 
-            page.overlay.append(dialogo_ticket)
-            dialogo_ticket.open = True
-            page.update()
+            page.open(dialogo_ticket)
 
         except Exception as e:
             print(f"Error generando ticket: {e}")
-            page.snack_bar = ft.SnackBar(ft.Text("No se pudo generar la nota de venta.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("No se pudo generar la nota de venta.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def procesar_venta(e):
         if not tabla_carrito.rows:
-            page.snack_bar = ft.SnackBar(ft.Text("El carrito está vacío.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.Text(f"⛔ Venta cancelada: Stock insuficiente de '{nombre_prod}'. Quedan {stock_actual} y solicitas {descuento_stock}.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD),bgcolor=ft.colors.RED, duration=5000)
             return
 
         conn = conectar_db()
@@ -373,12 +333,7 @@ def main(page: ft.Page):
                 nombre_prod, stock_actual = resultado
                 if stock_actual < descuento_stock:
                     conn.rollback()
-                    page.snack_bar = ft.SnackBar(
-                        content=ft.Text(f"⛔ Venta cancelada: Stock insuficiente de '{nombre_prod}'. Quedan {stock_actual} y solicitas {descuento_stock}.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD),
-                        bgcolor=ft.colors.RED, duration=5000
-                    )
-                    page.snack_bar.open = True
-                    page.update()
+                    page.open(ft.SnackBar(ft.Text(f"⛔ Venta cancelada: Stock insuficiente...", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.RED, duration=5000))
                     return  # El "finally" de abajo se encarga de cerrar la conexión
 
                 items.append((id_prod, empaque, cant, p_unit, sub_pen, sub_usd, descuento_stock))
@@ -425,8 +380,7 @@ def main(page: ft.Page):
 
             # Ventana emergente con acceso directo al Ticket
             def cerrar_alerta_venta(e):
-                alerta_venta.open = False
-                page.update()
+                page.close(alerta_venta)
 
             alerta_venta = ft.AlertDialog(
                 title=ft.Text("¡Venta Realizada!", color=ft.colors.GREEN, weight=ft.FontWeight.BOLD),
@@ -437,16 +391,12 @@ def main(page: ft.Page):
                 ]
             )
             
-            page.overlay.append(alerta_venta)
-            alerta_venta.open = True
-            page.update()
+            page.open(alerta_venta)
 
         except Exception as ex:
             conn.rollback()
             print(f"Error procesando la venta: {ex}")
-            page.snack_bar = ft.SnackBar(ft.Text("Error de conexión a la base de datos.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("Error de conexión a la base de datos.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
         finally:
             conn.close()
 
@@ -461,14 +411,10 @@ def main(page: ft.Page):
                         "INSERT INTO productos (nombre, presentacion, precio) VALUES (%s, %s, %s)",
                         (fila['Nombre'], fila['Presentacion'], fila['Precio'])
                     )
-            page.snack_bar = ft.SnackBar(ft.Text("Base de datos actualizada con éxito", color=ft.colors.GREEN))
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("Base de datos actualizada con éxito", color=ft.colors.GREEN)))
         except Exception as ex:
             print(f"Error procesando Excel: {ex}")
-            page.snack_bar = ft.SnackBar(ft.Text(f"❌ Error al procesar el Excel: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text(f"❌ Error al procesar el Excel: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def cerrar_sesion(e):
         page.rol_usuario = None 
@@ -481,14 +427,9 @@ def main(page: ft.Page):
         
         page.update()
 
-    def tiene_permiso():
+    def tiene_permiso():    
         if not hasattr(page, 'rol_usuario') or page.rol_usuario != "admin": 
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Acceso denegado: Solo el administrador puede modificar.", color=ft.colors.WHITE), 
-                bgcolor=ft.colors.RED
-            )
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("Acceso denegado: Solo el administrador puede modificar.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
             return False
         return True
 
@@ -529,9 +470,7 @@ def main(page: ft.Page):
 
         except Exception as e:
             print(f"Error consultando producto: {e}")
-            page.snack_bar = ft.SnackBar(ft.Text("No se pudo cargar el producto para editar.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("No se pudo cargar el producto para editar.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
             return
 
         # --- CAMPOS POBLADOS CON DATOS EXISTENTES ---
@@ -569,18 +508,11 @@ def main(page: ft.Page):
                         float(inp_pp_pen.value) if inp_pp_pen.value else 0.0, float(inp_pp_usd.value) if inp_pp_usd.value else 0.0,
                         id_prod
                     ))
-
-                dialogo_editar.open = False
+                page.close(dialogo_editar)
                 cargar_datos_inventario()
-                
-                page.snack_bar = ft.SnackBar(ft.Text("✅ Producto actualizado correctamente", color=ft.colors.WHITE), bgcolor=ft.colors.GREEN)
-                page.snack_bar.open = True
-                page.update()
+                page.open(ft.SnackBar(ft.Text("✅ Producto actualizado correctamente", color=ft.colors.WHITE), bgcolor=ft.colors.GREEN))
             except Exception as ex:
-                page.snack_bar = ft.SnackBar(ft.Text(f"❌ Error al guardar: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-                page.snack_bar.open = True
-                page.update()
-
+                page.open(ft.SnackBar(ft.Text(f"❌ Error al guardar: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
         dialogo_editar = ft.AlertDialog(
             title=ft.Text("Modificar Producto", weight=ft.FontWeight.BOLD),
             content=ft.Container(
@@ -599,13 +531,11 @@ def main(page: ft.Page):
                 ], scroll=ft.ScrollMode.AUTO, tight=True)
             ),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda e: setattr(dialogo_editar, 'open', False) or page.update()),
+                ft.TextButton("Cancelar", on_click=lambda e: page.close(dialogo_editar)),
                 ft.ElevatedButton("Guardar Cambios", bgcolor=ft.colors.GREEN, color=ft.colors.WHITE, on_click=guardar_edicion)
             ]
         )
-        page.overlay.append(dialogo_editar)
-        dialogo_editar.open = True
-        page.update()
+        page.open(dialogo_editar)
 
     def confirmar_eliminacion(id_prod, nombre_prod):
         if not tiene_permiso(): return
@@ -615,12 +545,10 @@ def main(page: ft.Page):
                 with obtener_cursor(commit=True) as cursor:
                     cursor.execute("DELETE FROM productos WHERE id_producto = %s", (id_prod,))
 
-                dialogo_borrar.open = False
+                page.close(dialogo_borrar) # <-- Sintaxis actualizada
                 cargar_datos_inventario() 
                 
-                page.snack_bar = ft.SnackBar(ft.Text(f"🗑️ '{nombre_prod}' eliminado", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-                page.snack_bar.open = True
-                page.update()
+                page.open(ft.SnackBar(ft.Text(f"🗑️ '{nombre_prod}' eliminado", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
             except mysql.connector.Error as err:
                 # Capturamos específicamente el error 1451 de llave foránea
                 if err.errno == 1451:
@@ -628,14 +556,11 @@ def main(page: ft.Page):
                 else:
                     mensaje = f"Error DB: {err}"
                     
-                page.snack_bar = ft.SnackBar(ft.Text(mensaje, color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.RED, duration=5000)
-                page.snack_bar.open = True
-                dialogo_borrar.open = False
-                page.update()
+                page.close(dialogo_borrar) # <-- Sintaxis actualizada
+                page.open(ft.SnackBar(ft.Text(mensaje, color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.RED, duration=5000)) # <-- Sintaxis actualizada
 
         def cancelar_borrado(e):
-            dialogo_borrar.open = False
-            page.update()
+            page.close(dialogo_borrar)
 
         dialogo_borrar = ft.AlertDialog(
             title=ft.Text("Confirmar Eliminación", color=ft.colors.RED, weight=ft.FontWeight.BOLD),
@@ -645,9 +570,7 @@ def main(page: ft.Page):
                 ft.ElevatedButton("Eliminar", bgcolor=ft.colors.RED, color=ft.colors.WHITE, on_click=borrar_bd)
             ]
         )
-        page.overlay.append(dialogo_borrar)
-        dialogo_borrar.open = True
-        page.update()
+        page.open(dialogo_borrar)
 
     def cargar_datos_inventario():
         # 1. Vaciamos la lista de filas internamente
@@ -695,9 +618,7 @@ def main(page: ft.Page):
             page.update()
         except Exception as e:
             print(f"Error cargando inventario: {e}")
-            page.snack_bar = ft.SnackBar(ft.Text("No se pudo cargar el inventario.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("No se pudo cargar el inventario.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     # 3. Esta es la función que ahora llama tu botón azul
     def exportar_excel(e):
@@ -716,18 +637,11 @@ def main(page: ft.Page):
 
             page.launch_url(f"/{nombre_archivo}", web_window_name="_blank")
 
-            page.snack_bar = ft.SnackBar(
-                content=ft.Text("¡Excel generado con éxito! Se abrió en una pestaña nueva.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD),
-                bgcolor=ft.colors.GREEN,
-                duration=6000
-            )
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("¡Excel generado con éxito! Se abrió en una pestaña nueva.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.GREEN, duration=6000))
+
         except Exception as ex:
             print(f"Error al exportar: {ex}")
-            page.snack_bar = ft.SnackBar(ft.Text(f"❌ Error al exportar: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text(f"❌ Error al exportar: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def cambiar_vista(e):
         seccion_pos.visible = False
@@ -833,23 +747,23 @@ def main(page: ft.Page):
             ft.DataColumn(ft.Text("Sub ($)")),
             ft.DataColumn(ft.Text("Acción")), 
         ],
-        rows=[], expand=True
+        rows=[]
     )
 
     lista_resultados = ft.ListView(spacing=2, padding=5, visible=False, height=150)
     input_buscar = ft.TextField(label="Buscar Producto", hint_text="Nombre...", on_change=buscar_dinamico, col={"sm": 12, "md": 3})
 
     panel_izquierdo = ft.Container(
-        expand=True, padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
+        padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
         content=ft.Column([
             ft.Text("Registrar venta", size=24, weight=ft.FontWeight.BOLD),
             ft.ResponsiveRow([input_dni, input_cliente, input_direccion]), 
             ft.Divider(color="#EEEEEE"),
             ft.ResponsiveRow([input_buscar, dropdown_empaque, input_cantidad, input_precio_esp, dropdown_moneda, btn_agregar]),
             lista_resultados,
-            ft.Container(content=tabla_carrito, expand=True),
+            ft.Container(content=tabla_carrito), 
             ft.ResponsiveRow([input_observacion])
-        ], scroll=ft.ScrollMode.AUTO)
+        ]) 
     )
 
     panel_derecho = ft.Container(
@@ -863,10 +777,9 @@ def main(page: ft.Page):
             ft.ElevatedButton("Procesar Venta", style=ft.ButtonStyle(bgcolor="#F39C12", color=ft.colors.WHITE), width=250, height=50, on_click=procesar_venta)
         ], spacing=20)
     )
-
     # 1. LA CAJA DE VENTAS (contenedor responsivo: apila los paneles en celulares)
     seccion_pos = ft.Container(
-        expand=True, padding=20,
+        padding=20, # <-- Eliminamos el expand=True de aquí
         content=ft.ResponsiveRow([
             ft.Column([panel_izquierdo], col={"sm": 12, "md": 8}),
             ft.Column([panel_derecho], col={"sm": 12, "md": 4})
@@ -895,12 +808,10 @@ def main(page: ft.Page):
     )
 
     def cerrar_dialogo_exito():
-        dialogo_exito.open = False
-        page.update()
+        page.close(dialogo_exito)
 
     def cerrar_dialogo(e):
-        dialogo_producto.open = False
-        page.update()
+        page.close(dialogo_producto)
 
     def guardar_producto_bd(e):
         boton = e.control
@@ -912,8 +823,7 @@ def main(page: ft.Page):
         presentacion = input_presentacion_prod.value.strip()
         
         if not nombre:
-            page.snack_bar = ft.SnackBar(ft.Text("El nombre es obligatorio"), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
+            page.open(ft.SnackBar(ft.Text("El nombre es obligatorio"), bgcolor=ft.colors.RED))
             boton.text = "Guardar"
             boton.disabled = False
             page.update()
@@ -957,18 +867,15 @@ def main(page: ft.Page):
                     )
                     mensaje = "Producto registrado correctamente en la nueva base de datos."
 
-            dialogo_producto.open = False
+            page.close(dialogo_producto) 
             dialogo_exito.content.value = mensaje
-            if dialogo_exito not in page.overlay:
-                page.overlay.append(dialogo_exito)
-            dialogo_exito.open = True
+            page.open(dialogo_exito)
             
             cargar_datos_inventario() 
             
         except Exception as ex:
             print(f"Error guardando: {ex}")
-            page.snack_bar = ft.SnackBar(ft.Text("Error al procesar en la BD"), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
+            page.open(ft.SnackBar(ft.Text("Error al procesar en la BD"), bgcolor=ft.colors.RED))
             
         boton.text = "Guardar"
         boton.disabled = False
@@ -1015,17 +922,14 @@ def main(page: ft.Page):
             input_precio_plancha_pen.value = "0.00"
             input_precio_plancha_usd.value = "0.00"
             
-            if dialogo_producto not in page.overlay:
-                page.overlay.append(dialogo_producto)
-            dialogo_producto.open = True
-            page.update()
+            page.open(dialogo_producto)
 
     # 3. VISTA DE INVENTARIO
     vista_inventario = ft.Container(
-        expand=True, visible=False, padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
+        visible=False, padding=20, bgcolor=ft.colors.WHITE, border_radius=10, 
         content=ft.Column([
             ft.Row([
-                ft.Text("Gestión de Inventario", size=24, weight=ft.FontWeight.BOLD),
+                ft.Text("Gestión de Inventario", size=22, weight=ft.FontWeight.BOLD),
                 ft.Row([
                     ft.ElevatedButton("Excel", icon=ft.icons.DOWNLOAD, style=ft.ButtonStyle(bgcolor=ft.colors.BLUE, color=ft.colors.WHITE), on_click=exportar_excel),
                     ft.ElevatedButton("Agregar Producto", icon=ft.icons.ADD, style=ft.ButtonStyle(bgcolor=ft.colors.GREEN, color=ft.colors.WHITE), on_click=abrir_dialogo_nuevo),
@@ -1033,7 +937,7 @@ def main(page: ft.Page):
                 ])
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.Divider(),
-            ft.ListView(controls=[tabla_inventario], expand=True)
+            ft.Column([tabla_inventario]) # <-- Sin ListView, sin scroll, solo la columna
         ])
     )
     tabla_ventas_diarias = ft.DataTable(
@@ -1050,13 +954,10 @@ def main(page: ft.Page):
 
     def exportar_ticket_pdf(id_venta, codigo_ticket):
         # 1. Señal visual de inicio de exportación
-        page.snack_bar = ft.SnackBar(ft.Text(f"⏳ Generando PDF de {codigo_ticket}...", color=ft.colors.BLACK, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.YELLOW)
-        page.snack_bar.open = True
-        page.update()
-        
+        page.open(ft.SnackBar(ft.Text(f"⏳ Generando PDF de {codigo_ticket}...", color=ft.colors.BLACK, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.YELLOW))
+
         try:
             with obtener_cursor() as cursor:
-                # Agregamos "vendedor" a la consulta SQL
                 cursor.execute("SELECT fecha_emision, hora_emision, vendedor, cliente_nombre, cliente_dni, cliente_direccion, total_pen, total_usd FROM ventas WHERE id_venta = %s", (id_venta,))
                 cabecera = cursor.fetchone()
 
@@ -1068,89 +969,111 @@ def main(page: ft.Page):
 
             f_emision, h_emision, vendedor, c_nombre, c_dni, c_dir, t_pen, t_usd = cabecera
 
-            # 2. CÁLCULO DEL ALTO DINÁMICO (Corte automático de papel)
-            alto_base = 94  # Aumentamos a 94 para darle espacio a la nueva línea del vendedor
+            # 2. CÁLCULO DEL ALTO DINÁMICO
+            alto_base = 120  # Aumentado para acomodar el nuevo diseño del pie de página
             alto_productos = len(detalles) * 5  
             alto_total = alto_base + alto_productos
-            
-            if t_usd > 0:
-                alto_total += 15 
 
             pdf = FPDF(orientation='P', unit='mm', format=(80, alto_total)) 
             pdf.set_margins(5, 5, 5) 
             pdf.set_auto_page_break(auto=False, margin=0) 
             pdf.add_page()
             
-            # --- LOGO CENTRADO ---
-            pdf.image("LogoLK.png", x=25, y=5, w=30) 
-            pdf.ln(12) 
+            # --- LOGO Y DIRECCIÓN FIJA ---
+            # Centramos el logo ampliando su ancho (50mm en un papel de 80mm)
+            pdf.image("LogoLK.png", x=15, y=5, w=50) 
+            pdf.ln(18) 
             
-            # --- RECUADRO NOTA DE VENTA ---
-            pdf.set_font("Arial", 'B', 9)
-            pdf.cell(70, 6, txt=f"NOTA DE VENTA: {codigo_ticket}", border=1, ln=True, align='C')
-            
-            # --- DATOS DEL CLIENTE Y VENDEDOR ---
-            pdf.ln(2)
             pdf.set_font("Arial", size=7)
-            pdf.cell(70, 4, txt=f"Fecha: {f_emision}   Hora: {h_emision}", ln=True, align='C')
-            
-            # Nueva línea para el vendedor, renderizada en mayúsculas
-            pdf.cell(70, 4, txt=f"Atendido por: {str(vendedor).upper()}", ln=True, align='L')
-            
-            pdf.cell(70, 4, txt=f"Cliente: {c_nombre if c_nombre else 'VARIOS'}", ln=True, align='L')
-            pdf.cell(70, 4, txt=f"DNI: {c_dni if c_dni else '00000000'}", ln=True, align='L')
-            pdf.cell(70, 4, txt=f"Dir: {c_dir[:30] if c_dir else 'Tacna'}", ln=True, align='L')
-            
+            pdf.cell(70, 4, txt="Calle Uruguay 409, CC Polvos Rosados", ln=True, align='C')
+            pdf.cell(70, 4, txt="Al Costado De La Puerta 15", ln=True, align='C')
+            pdf.ln(3)
+
+            # --- TÍTULO DE NOTA DE VENTA ---
+            pdf.set_font("Arial", 'B', 10)
+            pdf.cell(70, 5, txt="Nota de Venta", ln=True, align='C')
+            pdf.cell(70, 5, txt=codigo_ticket, ln=True, align='C')
             pdf.ln(3)
             
-            # --- CABECERAS TABULARES EN MINIATURA ---
-            pdf.set_font("Arial", 'B', 5) 
-            pdf.set_fill_color(220, 220, 220) 
-            pdf.cell(6, 5, txt="CANT", border=1, align='C', fill=True)
-            pdf.cell(9, 5, txt="EMP", border=1, align='C', fill=True)
-            pdf.cell(23, 5, txt="DESC", border=1, align='C', fill=True)
-            pdf.cell(10, 5, txt="P.UNI", border=1, align='C', fill=True)
-            pdf.cell(11, 5, txt="SUB(S/)", border=1, align='C', fill=True)
-            pdf.cell(11, 5, txt="SUB($)", border=1, ln=True, align='C', fill=True)
+            # --- DATOS DEL CLIENTE ---
+            pdf.set_font("Arial", size=7)
+            
+            def dibujar_fila_cliente(etiqueta, valor):
+                pdf.cell(18, 4, txt=etiqueta, align='L')
+                pdf.cell(52, 4, txt=str(valor), ln=True, align='L')
+
+            dibujar_fila_cliente("F. Emisión:", f_emision)
+            dibujar_fila_cliente("H. Emisión:", h_emision)
+            dibujar_fila_cliente("Cliente:", c_nombre if c_nombre else 'VARIOS')
+            dibujar_fila_cliente("DNI:", c_dni if c_dni else '00000000')
+            dibujar_fila_cliente("Dirección:", c_dir[:30] if c_dir else 'Tacna')
+            pdf.ln(2)
+            
+            # --- CABECERAS DE TABLA ---
+            pdf.set_font("Arial", 'B', 6) 
+            pdf.cell(6, 5, txt="Cant", border=1, align='C')
+            pdf.cell(8, 5, txt="Unid", border=1, align='C')
+            pdf.cell(26, 5, txt="Descripción", border=1, align='C')
+            pdf.cell(10, 5, txt="P.U.", border=1, align='C')
+            pdf.cell(10, 5, txt="Total S/", border=1, align='C')
+            pdf.cell(10, 5, txt="Total $", border=1, ln=True, align='C')
             
             # --- FILAS DE PRODUCTOS ---
             pdf.set_font("Arial", size=5)
             for det in detalles:
                 pdf.cell(6, 5, txt=str(det[1]), border=1, align='C')
-                pdf.cell(9, 5, txt=str(det[2][:3]).upper(), border=1, align='C') 
-                pdf.cell(23, 5, txt=str(det[0][:15]), border=1, align='L')
-                pdf.cell(10, 5, txt=f"{det[3]:.1f}", border=1, align='C')
-                pdf.cell(11, 5, txt=f"{det[4]:.2f}", border=1, align='R')
-                pdf.cell(11, 5, txt=f"{det[5]:.2f}", border=1, ln=True, align='R')
+                pdf.cell(8, 5, txt=str(det[2][:3]).upper(), border=1, align='C') 
+                pdf.cell(26, 5, txt=str(det[0][:18]), border=1, align='L')
+                pdf.cell(10, 5, txt=f"{det[3]:.2f}", border=1, align='C')
+                pdf.cell(10, 5, txt=f"{det[4]:.2f}", border=1, align='R')
+                pdf.cell(10, 5, txt=f"{det[5]:.2f}", border=1, ln=True, align='R')
                 
             pdf.ln(3)
             
-            # --- TOTALES Y CONVERSIÓN A TEXTO ---
+            # --- TOTALES ---
+            pdf.set_font("Arial", 'B', 7)
             if t_pen > 0:
-                pdf.set_font("Arial", 'B', 9)
-                pdf.cell(46, 5, txt="TOTAL (S/):", align='R')
-                pdf.cell(24, 5, txt=f"{t_pen:.2f}", border=1, ln=True, align='R', fill=True)
+                pdf.cell(40, 4, txt="", align='L')
+                pdf.cell(20, 4, txt="Total a pagar: S/", align='R')
+                pdf.cell(10, 4, txt=f"{t_pen:.2f}", ln=True, align='R')
+            if t_usd > 0:
+                pdf.cell(40, 4, txt="", align='L')
+                pdf.cell(20, 4, txt="Total a pagar: $", align='R')
+                pdf.cell(10, 4, txt=f"{t_usd:.2f}", ln=True, align='R')
                 
+            pdf.ln(2)
+            
+            # --- TEXTO EN LETRAS ---
+            pdf.set_font("Arial", 'B', 7)
+            if t_pen > 0:
                 entero = int(t_pen)
                 centimos = int(round((t_pen - entero) * 100))
                 texto_pen = num2words(entero, lang='es').capitalize()
-                pdf.set_font("Arial", 'I', 7)
-                pdf.multi_cell(70, 4, txt=f"Son: {texto_pen} con {centimos:02d}/100 Soles", align='R')
+                pdf.cell(70, 4, txt=f"Son: {texto_pen} con {centimos:02d}/100 Soles", ln=True, align='L')
             
             if t_usd > 0:
-                pdf.ln(1)
-                pdf.set_font("Arial", 'B', 9)
-                pdf.cell(46, 5, txt="TOTAL ($):", align='R')
-                pdf.cell(24, 5, txt=f"{t_usd:.2f}", border=1, ln=True, align='R', fill=True)
-                
                 entero_usd = int(t_usd)
                 centimos_usd = int(round((t_usd - entero_usd) * 100))
                 texto_usd = num2words(entero_usd, lang='es').capitalize()
-                pdf.set_font("Arial", 'I', 7)
-                pdf.multi_cell(70, 4, txt=f"Son: {texto_usd} con {centimos_usd:02d}/100 Dolares", align='R')
+                pdf.cell(70, 4, txt=f"Son: {texto_usd} con {centimos_usd:02d}/100 Dólares Americanos", ln=True, align='L')
             
-            pdf.ln(5)
+            pdf.ln(3)
+            
+            # --- PIE DE PÁGINA (CONDICIÓN Y VENDEDOR) ---
+            pdf.cell(70, 4, txt="Condición de Pago: Contado", ln=True, align='L')
+            pdf.cell(70, 4, txt="Pagos:", ln=True, align='L')
+            
+            pdf.set_font("Arial", size=7)
+            if t_pen > 0:
+                pdf.cell(70, 4, txt=f"- Efectivo - S/ {t_pen:.2f}", ln=True, align='L')
+            if t_usd > 0:
+                pdf.cell(70, 4, txt=f"- Efectivo - $ {t_usd:.2f}", ln=True, align='L')
+                
             pdf.set_font("Arial", 'B', 7)
+            pdf.cell(70, 4, txt=f"Vendedor: {str(vendedor).upper()}", ln=True, align='L')
+
+            pdf.ln(5)
+            pdf.set_font("Arial", size=7)
             pdf.cell(70, 4, txt="¡Gracias por su compra!", ln=True, align='C')
 
             os.makedirs("assets", exist_ok=True)
@@ -1160,15 +1083,11 @@ def main(page: ft.Page):
             page.launch_url(f"/{codigo_ticket}.pdf")
 
             # 3. Señal visual de éxito al finalizar
-            page.snack_bar = ft.SnackBar(ft.Text("✅ ¡PDF generado! Se abrió en una pestaña nueva.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.GREEN, duration=6000)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("✅ ¡PDF generado! Se abrió en una pestaña nueva.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.GREEN, duration=6000))
 
         except Exception as e:
             print(f"Error PDF Térmico: {e}")
-            page.snack_bar = ft.SnackBar(ft.Text(f"❌ Error al exportar: {e}", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text(f"❌ Error al exportar: {e}", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def anular_venta(id_v, cod_ticket):
         def confirmar_anulacion(e):
@@ -1186,31 +1105,24 @@ def main(page: ft.Page):
                         id_p, cant, emp = det
                         devolucion = cant * multiplicadores.get(emp, 1)
                         cursor.execute("UPDATE productos SET stock = stock + %s WHERE id_producto = %s", (devolucion, id_p))
-                
-                dialogo_anular.open = False
+                page.close(dialogo_anular)
                 cargar_ventas_diarias() # Refresca la tabla
                 cargar_datos_inventario() # Refresca el inventario de fondo
-                
-                page.snack_bar = ft.SnackBar(ft.Text(f"Ticket {cod_ticket} anulado y stock devuelto.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.ORANGE)
-                page.snack_bar.open = True
-                page.update()
+                page.open(ft.SnackBar(ft.Text(f"Ticket {cod_ticket} anulado y stock devuelto.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.ORANGE))
             except Exception as ex:
                 print(f"Error anulando: {ex}")
-                page.snack_bar = ft.SnackBar(ft.Text("Error al procesar la anulación.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-                page.snack_bar.open = True
-                page.update()
+                page.open(ft.SnackBar(ft.Text("Error al procesar la anulación.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
         dialogo_anular = ft.AlertDialog(
             title=ft.Text("Confirmar Anulación", color=ft.colors.RED, weight=ft.FontWeight.BOLD),
             content=ft.Text(f"¿Estás seguro de anular la venta {cod_ticket}?\n\nEl stock de estos productos se devolverá automáticamente a tu inventario."),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda e: setattr(dialogo_anular, 'open', False) or page.update()),
+                ft.TextButton("Cancelar", on_click=lambda e: page.close(dialogo_anular)),
                 ft.ElevatedButton("Anular Venta", bgcolor=ft.colors.RED, color=ft.colors.WHITE, on_click=confirmar_anulacion)
             ]
         )
-        page.overlay.append(dialogo_anular)
-        dialogo_anular.open = True
-        page.update()
+    
+        page.open(dialogo_anular)
 
     def cargar_ventas_diarias():
         tabla_ventas_diarias.rows.clear()
@@ -1263,9 +1175,7 @@ def main(page: ft.Page):
             page.update()
         except Exception as e:
             print(f"Error cargando ventas: {e}")
-            page.snack_bar = ft.SnackBar(ft.Text("No se pudieron cargar las ventas.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("No se pudieron cargar las ventas.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def cuadrar_caja_diaria(e):
         try:
@@ -1284,8 +1194,7 @@ def main(page: ft.Page):
             cantidad_tickets = resultado[2] if resultado[2] else 0
             
             def cerrar_cuadre(e):
-                dialogo_cuadre.open = False
-                page.update()
+                page.close(dialogo_cuadre)
             
             dialogo_cuadre = ft.AlertDialog(
                 title=ft.Text("Cuadre de Caja Diaria", weight=ft.FontWeight.BOLD, color="#F39C12"),
@@ -1298,15 +1207,11 @@ def main(page: ft.Page):
                 actions=[ft.ElevatedButton("Aceptar", bgcolor=ft.colors.BLACK, color=ft.colors.WHITE, on_click=cerrar_cuadre)]
             )
             
-            page.overlay.append(dialogo_cuadre)
-            dialogo_cuadre.open = True
-            page.update()
+            page.open(dialogo_cuadre)
             
         except Exception as ex:
             print(f"Error al cuadrar caja: {ex}")
-            page.snack_bar = ft.SnackBar(ft.Text("No se pudo calcular el cuadre de caja.", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("No se pudo calcular el cuadre de caja.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
             # --- GRÁFICO DE BARRAS (INGRESOS DIARIOS) ---
     #grafico_ingresos = ft.BarChart(
@@ -1322,8 +1227,7 @@ def main(page: ft.Page):
             #labels_size=40
         #),
         #horizontal_grid_lines=ft.ChartGridLines(color=ft.colors.GREY_300, width=1, dash_pattern=[3, 3]),
-        #tooltip_bgcolor=ft.colors.BLACK87,
-        #expand=True,
+        #tooltip_bgcolor=ft.colors.BLACK87
         #interactive=True
     #)
 
@@ -1362,20 +1266,16 @@ def main(page: ft.Page):
 
 
     panel_reportes = ft.Container(
-        expand=True, visible=False, padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
+        visible=False, padding=20, bgcolor=ft.colors.WHITE, border_radius=10, # <-- Sin expand=True
         content=ft.Column([
             ft.Text("Cierre de Caja - Historial de Ventas", size=24, weight=ft.FontWeight.BOLD),
             ft.Divider(color="#EEEEEE"),
             ft.ResponsiveRow([
                 ft.ElevatedButton("Cuadrar Caja Diaria", icon=ft.icons.CALCULATE, bgcolor="#F39C12", color=ft.colors.WHITE, on_click=cuadrar_caja_diaria, col={"sm": 12, "md": 3})
             ]),
-            # --- Aquí inyectamos el gráfico visual ---
-            #ft.Text("Comparativa de Ingresos", size=18, weight=ft.FontWeight.W_600),
-            #contenedor_grafico, 
             ft.Divider(color=ft.colors.TRANSPARENT, height=10),
-            # -----------------------------------------
-            ft.Container(content=tabla_ventas_diarias, expand=True, padding=ft.Padding(left=0, top=15, right=0, bottom=0))
-        ], scroll=ft.ScrollMode.AUTO)
+            ft.Container(content=tabla_ventas_diarias, padding=ft.Padding(left=0, top=15, right=0, bottom=0))
+        ]) # <-- Eliminamos el scroll=AUTO de aquí
     )
 
     boton_hamburguesa = ft.IconButton(icon=ft.icons.MENU, icon_size=30, on_click=toggle_menu)
@@ -1384,10 +1284,10 @@ def main(page: ft.Page):
         ft.Row([boton_hamburguesa]),
         seccion_pos,
         vista_inventario,
-        panel_reportes # Añadimos el nuevo panel al ensamblaje principal
-    ], expand=True)
+        panel_reportes
+    ], expand=True, scroll=ft.ScrollMode.AUTO)
 
-    vista_dashboard = ft.Row([menu_lateral, area_derecha], expand=True, visible=False)
+    vista_dashboard = ft.Row([menu_lateral, area_derecha], visible=False)
 
     # 5. INICIO DE SESIÓN
     input_usuario = ft.TextField(label="Correo electrónico", width=300)
@@ -1401,9 +1301,7 @@ def main(page: ft.Page):
         password_ok = datos_usuario and hashlib.sha256(password.encode()).hexdigest() == datos_usuario["password_hash"]
 
         if not password_ok:
-            page.snack_bar = ft.SnackBar(ft.Text("Credenciales incorrectas", color=ft.colors.WHITE), bgcolor=ft.colors.RED)
-            page.snack_bar.open = True
-            page.update()
+            page.open(ft.SnackBar(ft.Text("Credenciales incorrectas", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
             return
 
         page.rol_usuario = datos_usuario["rol"]
@@ -1425,6 +1323,7 @@ def main(page: ft.Page):
     btn_login = ft.ElevatedButton("Iniciar sesión", style=ft.ButtonStyle(bgcolor="#F39C12", color=ft.colors.WHITE), width=300, height=50, on_click=iniciar_sesion)
 
     vista_login = ft.Container(
+        expand=True,
         content=ft.Column([
             ft.Icon(ft.icons.STORE, size=60, color="#F39C12"),
             ft.Text("Bienvenido de vuelta", size=30, weight=ft.FontWeight.BOLD),
@@ -1435,8 +1334,7 @@ def main(page: ft.Page):
             ft.Divider(color=ft.colors.TRANSPARENT, height=10),
             btn_login
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        alignment=ft.Alignment(0, 0),
-        expand=True
+        alignment=ft.Alignment(0, 0)
     )
 
 
@@ -1444,4 +1342,4 @@ def main(page: ft.Page):
     page.add(vista_login, vista_dashboard)
 
 # EJECUCIÓN WEB
-ft.app(target=main, view=ft.AppView.WEB_BROWSER, assets_dir="assets", port=int(os.getenv("PORT", 8080)))
+ft.app(target=main, view=ft.WEB_BROWSER, assets_dir="assets", port=int(os.getenv("PORT", 8080)))
