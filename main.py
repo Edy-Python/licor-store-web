@@ -1111,8 +1111,10 @@ def main(page: ft.Page):
             pdf.set_font("Arial", size=7)
             pdf.cell(70, 4, txt="¡Gracias por su compra!", ln=True, align='C')
 
-            os.makedirs("assets", exist_ok=True)
-            ruta_pdf = os.path.join("assets", f"{codigo_ticket}.pdf")
+            import os
+            dir_base = os.path.dirname(os.path.abspath(__file__))
+            ruta_pdf = os.path.join(dir_base, "assets", f"{codigo_ticket}.pdf")
+            os.makedirs(os.path.dirname(ruta_pdf), exist_ok=True)
             pdf.output(ruta_pdf)
 
             page.launch_url(f"/{codigo_ticket}.pdf", web_window_name="_blank") 
@@ -1447,4 +1449,9 @@ def main(page: ft.Page):
 
     page.add(vista_login, vista_dashboard)
 
-ft.app(target=main, view=ft.WEB_BROWSER, assets_dir="assets", port=int(os.getenv("PORT", 8080)))
+import os
+directorio_base = os.path.dirname(os.path.abspath(__file__))
+directorio_assets = os.path.join(directorio_base, "assets")
+os.makedirs(directorio_assets, exist_ok=True)
+
+ft.app(target=main, view=ft.WEB_BROWSER, assets_dir=directorio_assets, port=int(os.getenv("PORT", 8080)))
