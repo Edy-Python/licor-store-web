@@ -25,13 +25,29 @@ def obtener_cursor(commit=False):
         conn.close()
 
 def main(page: ft.Page):
-    page.rol_usuario = None
+    page.rol_usuario = None  
     page.title = "Likio Licores"
-    page.theme_mode = ft.ThemeMode.LIGHT
-    page.title = "Likio Licores"
+    page.fonts = {
+        "Inter": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+    }
+    page.theme = ft.Theme(font_family="Inter")
     page.theme_mode = ft.ThemeMode.LIGHT 
     page.padding = 0 
     page.bgcolor = "#F4F6F8"
+
+    # --- ESTILO UNIVERSAL PARA PANELES (EFECTO TARJETA) ---
+    estilo_tarjeta = {
+        "padding": 25,
+        "bgcolor": ft.colors.WHITE,
+        "border_radius": 12,
+        "shadow": ft.BoxShadow(
+            spread_radius=0, 
+            blur_radius=15, 
+            color=ft.colors.with_opacity(0.08, ft.colors.BLACK), 
+            offset=ft.Offset(0, 4)
+        ),
+        "border": ft.border.all(1, ft.colors.GREY_100)
+    }
 
     accion_guardada = [None] 
     input_pass_seguridad = ft.TextField(label="Contraseña de Administrador", password=True, can_reveal_password=True)
@@ -425,6 +441,9 @@ def main(page: ft.Page):
             print("Acción permitida: El administrador está modificando datos...")
 
     tabla_inventario = ft.DataTable(
+        heading_row_color=ft.colors.GREY_100,
+        border_radius=8,
+        border=ft.border.all(1, ft.colors.GREY_200),
         columns=[
             ft.DataColumn(ft.Text("#", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Producto")),
@@ -633,6 +652,7 @@ def main(page: ft.Page):
             seccion_pos.visible = True
         elif nombre_boton == "Inventario":
             vista_inventario.visible = True
+            cargar_datos_inventario()
         elif nombre_boton == "Reportes":
             panel_reportes.visible = True
             cargar_ventas_diarias() 
@@ -666,7 +686,7 @@ def main(page: ft.Page):
         )
 
     menu_lateral = ft.Container(
-        width=200, bgcolor="#1A1A1A", padding=20,
+        width=200, bgcolor="#1A1A1A", padding=20, border_radius=ft.border_radius.only(top_right=15, bottom_right=15),
         content=ft.Column([
             ft.Text("LICOR STORE", color="#F39C12", weight=ft.FontWeight.BOLD, size=20),
             ft.Divider(color="white24"),
@@ -707,6 +727,9 @@ def main(page: ft.Page):
     
     tabla_carrito = ft.DataTable(
         column_spacing=15, 
+        heading_row_color=ft.colors.GREY_100,
+        border_radius=8,
+        border=ft.border.all(1, ft.colors.GREY_200),
         columns=[
             ft.DataColumn(ft.Container(ft.Text("ID"), width=30)), 
             ft.DataColumn(ft.Container(ft.Text("Descripción"), width=120)),
@@ -725,7 +748,7 @@ def main(page: ft.Page):
     input_buscar = ft.TextField(label="Buscar Producto", hint_text="Nombre...", on_change=buscar_dinamico, col={"sm": 12, "md": 3})
 
     panel_izquierdo = ft.Container(
-        padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
+        **estilo_tarjeta,
         content=ft.Column([
             ft.Text("Registrar venta", size=24, weight=ft.FontWeight.BOLD),
             ft.ResponsiveRow([input_dni, input_cliente, input_direccion]), 
@@ -738,7 +761,7 @@ def main(page: ft.Page):
     )
 
     panel_derecho = ft.Container(
-        padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
+        **estilo_tarjeta,
         content=ft.Column([
             ft.Text("Detalle de venta", size=20, weight=ft.FontWeight.BOLD),
             ft.Divider(),
@@ -902,7 +925,8 @@ def main(page: ft.Page):
 
     # 3. VISTA DE INVENTARIO
     vista_inventario = ft.Container(
-        visible=False, padding=20, bgcolor=ft.colors.WHITE, border_radius=10, 
+        visible=False, 
+        **estilo_tarjeta,
         content=ft.Column([
             ft.Row([
                 ft.Text("Gestión de Inventario", size=22, weight=ft.FontWeight.BOLD),
@@ -917,6 +941,9 @@ def main(page: ft.Page):
         ])
     )
     tabla_ventas_diarias = ft.DataTable(
+        heading_row_color=ft.colors.GREY_100,
+        border_radius=8,
+        border=ft.border.all(1, ft.colors.GREY_200),
         columns=[
             ft.DataColumn(ft.Text("Ticket", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Hora", weight=ft.FontWeight.BOLD)),
@@ -991,7 +1018,7 @@ def main(page: ft.Page):
             for det in detalles:
                 pdf.cell(6, 5, txt=str(det[1]), border=1, align='C')
                 pdf.cell(8, 5, txt=str(det[2][:3]).upper(), border=1, align='C') 
-                pdf.cell(26, 5, txt=str(det[0][:18]), border=1, align='L')
+                pdf.cell(26, 5, txt=str(det[0][:27]), border=1, align='L')
                 pdf.cell(10, 5, txt=f"{det[3]:.2f}", border=1, align='C')
                 pdf.cell(10, 5, txt=f"{det[4]:.2f}", border=1, align='R')
                 pdf.cell(10, 5, txt=f"{det[5]:.2f}", border=1, ln=True, align='R')
@@ -1224,7 +1251,8 @@ def main(page: ft.Page):
 
 
     panel_reportes = ft.Container(
-        visible=False, padding=20, bgcolor=ft.colors.WHITE, border_radius=10,
+        visible=False, 
+        **estilo_tarjeta,
         content=ft.Column([
             ft.Text("Cierre de Caja - Historial de Ventas", size=24, weight=ft.FontWeight.BOLD),
             ft.Divider(color="#EEEEEE"),
@@ -1245,7 +1273,7 @@ def main(page: ft.Page):
         panel_reportes
     ], expand=True, scroll=ft.ScrollMode.AUTO)
 
-    vista_dashboard = ft.Row([menu_lateral, area_derecha], visible=False)
+    vista_dashboard = ft.Row([menu_lateral, area_derecha], visible=False, expand=True, vertical_alignment=ft.CrossAxisAlignment.START)
 
     input_usuario = ft.TextField(label="Correo electrónico", width=300)
     input_password = ft.TextField(label="Contraseña", password=True, can_reveal_password=True, width=300)
