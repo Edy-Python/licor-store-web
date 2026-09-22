@@ -1,4 +1,5 @@
 import flet as ft
+import textwrap
 import datetime
 import hashlib
 import mysql.connector
@@ -168,7 +169,7 @@ def main(page: ft.Page):
                 
                 nueva_fila = ft.DataRow(cells=[
                     ft.DataCell(ft.Container(content=ft.Text(id_formateado), width=30)),
-                    ft.DataCell(ft.Container(content=ft.Text(str(nombre)), width=120)),
+                    ft.DataCell(ft.Container(content=ft.Text(str(nombre), size=12, max_lines=3, overflow=ft.TextOverflow.ELLIPSIS), width=170)), # <-- Texto multilínea
                     ft.DataCell(ft.Text(str(pres))),
                     ft.DataCell(ft.Text(empaque)),
                     ft.DataCell(ft.Text(str(cant_ingresada))),
@@ -579,38 +580,39 @@ def main(page: ft.Page):
         page.update()
         
         try:
+            cat = filtro_cat_inv.value
+            nom = filtro_nom_inv.value.strip() if filtro_nom_inv.value else ""
+            
+            query = "SELECT id_producto, nombre, presentacion, stock, precio_uni_pen, precio_caja_pen FROM productos WHERE 1=1"
+            params = []
+            
+            if cat and cat != "TODAS":
+                query += " AND categoria = %s"
+                params.append(cat)
+            if nom:
+                query += " AND nombre LIKE %s"
+                params.append(f"%{nom}%")
+                
+            query += " ORDER BY id_producto ASC"
+
             with obtener_cursor() as cursor:
-                cursor.execute("SELECT id_producto, nombre, presentacion, stock, precio_uni_pen, precio_caja_pen FROM productos ORDER BY id_producto ASC")
+                cursor.execute(query, tuple(params))
                 filas = cursor.fetchall()
+            
+            alerta_no_encontrado.visible = (len(filas) == 0)
 
             correlativo = 1
-
             for fila in filas:
                 id_real = fila[0] 
                 nombre_prod = str(fila[1])
                 
-                btn_editar = ft.IconButton(
-                     ft.icons.EDIT, 
-                     icon_color=ft.colors.BLUE, 
-                     tooltip="Editar y Añadir Stock",
-                     on_click=lambda e, i=id_real: solicitar_password(lambda: abrir_edicion(i))
-                )
-                btn_borrar = ft.IconButton(
-                    ft.icons.DELETE, 
-                    icon_color=ft.colors.RED, 
-                    tooltip="Eliminar",
-                    on_click=lambda e, i=id_real, n=nombre_prod: solicitar_password(lambda: confirmar_eliminacion(i, n))
-                )
-                acciones = ft.Row([btn_editar, btn_borrar])
+                btn_editar = ft.IconButton(ft.icons.EDIT, icon_color=ft.colors.BLUE, on_click=lambda e, i=id_real: solicitar_password(lambda: abrir_edicion(i)))
+                btn_borrar = ft.IconButton(ft.icons.DELETE, icon_color=ft.colors.RED, on_click=lambda e, i=id_real, n=nombre_prod: solicitar_password(lambda: confirmar_eliminacion(i, n)))
                 
                 tabla_inventario.rows.append(ft.DataRow(cells=[
-                    ft.DataCell(ft.Text(str(correlativo))), 
-                    ft.DataCell(ft.Text(nombre_prod)),
-                    ft.DataCell(ft.Text(str(fila[2]))),
-                    ft.DataCell(ft.Text(str(fila[3]))),
-                    ft.DataCell(ft.Text(f"{fila[4]:.2f}")),
-                    ft.DataCell(ft.Text(f"{fila[5]:.2f}")),
-                    ft.DataCell(acciones),
+                    ft.DataCell(ft.Text(str(correlativo))), ft.DataCell(ft.Text(nombre_prod)), ft.DataCell(ft.Text(str(fila[2]))),
+                    ft.DataCell(ft.Text(str(fila[3]))), ft.DataCell(ft.Text(f"{fila[4]:.2f}")), ft.DataCell(ft.Text(f"{fila[5]:.2f}")),
+                    ft.DataCell(ft.Row([btn_editar, btn_borrar]))
                 ]))
                 correlativo += 1
 
@@ -730,9 +732,10 @@ def main(page: ft.Page):
         heading_row_color=ft.colors.GREY_100,
         border_radius=8,
         border=ft.border.all(1, ft.colors.GREY_200),
+        data_row_max_height=65,
         columns=[
             ft.DataColumn(ft.Container(ft.Text("ID"), width=30)), 
-            ft.DataColumn(ft.Container(ft.Text("Descripción"), width=120)),
+            ft.DataColumn(ft.Container(ft.Text("Descripción"), width=170)), # <-- Ancho ampliado
             ft.DataColumn(ft.Text("Pres.")),
             ft.DataColumn(ft.Text("Tipo")),
             ft.DataColumn(ft.Text("Cant.")),
@@ -923,7 +926,12 @@ def main(page: ft.Page):
             
             page.open(dialogo_producto)
 
-    # 3. VISTA DE INVENTARIO
+    opciones_filtro = ["TODAS", "WHISKY", "WHISKEY", "RON", "PISCO", "VINO", "LICOR", "TEQUILA", "CREMA", "GIN", "VODKA", "VERMOUTH", "BRANDY", "COGNAC", "ESPUMANTE", "CHAMPAGNE", "MEZCAL", "CERVEZA", "RTD", "AGUA", "GASEOSA", "ENERGIZANTE", "AGUA TÓNICA", "GINGER ALE", "JUGO"]
+    
+    filtro_cat_inv = ft.Dropdown(options=[ft.dropdown.Option(c) for c in opciones_filtro], value="TODAS", label="Filtrar Categoría", col={"sm": 12, "md": 4}, on_change=lambda _: cargar_datos_inventario())
+    filtro_nom_inv = ft.TextField(label="Buscar producto por nombre...", prefix_icon=ft.icons.SEARCH, col={"sm": 12, "md": 8}, on_change=lambda _: cargar_datos_inventario())
+    alerta_no_encontrado = ft.Text("❌ Producto no encontrado.", color=ft.colors.RED, visible=False, weight=ft.FontWeight.BOLD)
+
     vista_inventario = ft.Container(
         visible=False, 
         **estilo_tarjeta,
@@ -932,10 +940,11 @@ def main(page: ft.Page):
                 ft.Text("Gestión de Inventario", size=22, weight=ft.FontWeight.BOLD),
                 ft.Row([
                     ft.ElevatedButton("Excel", icon=ft.icons.DOWNLOAD, style=ft.ButtonStyle(bgcolor=ft.colors.BLUE, color=ft.colors.WHITE), on_click=exportar_excel),
-                    ft.ElevatedButton("Agregar Producto", icon=ft.icons.ADD, style=ft.ButtonStyle(bgcolor=ft.colors.GREEN, color=ft.colors.WHITE), on_click=abrir_dialogo_nuevo),
-                    ft.ElevatedButton("Actualizar Datos", icon=ft.icons.REFRESH, on_click=lambda _: cargar_datos_inventario())
+                    ft.ElevatedButton("Agregar", icon=ft.icons.ADD, style=ft.ButtonStyle(bgcolor=ft.colors.GREEN, color=ft.colors.WHITE), on_click=abrir_dialogo_nuevo),
                 ])
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.ResponsiveRow([filtro_cat_inv, filtro_nom_inv]),
+            alerta_no_encontrado,
             ft.Divider(),
             ft.Column([tabla_inventario])
         ])
@@ -946,7 +955,7 @@ def main(page: ft.Page):
         border=ft.border.all(1, ft.colors.GREY_200),
         columns=[
             ft.DataColumn(ft.Text("Ticket", weight=ft.FontWeight.BOLD)),
-            ft.DataColumn(ft.Text("Hora", weight=ft.FontWeight.BOLD)),
+            ft.DataColumn(ft.Text("Fecha y Hora", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Cliente", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Total (S/)", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Total ($)", weight=ft.FontWeight.BOLD)),
@@ -1016,12 +1025,35 @@ def main(page: ft.Page):
             
             pdf.set_font("Arial", size=5)
             for det in detalles:
-                pdf.cell(6, 5, txt=str(det[1]), border=1, align='C')
-                pdf.cell(8, 5, txt=str(det[2][:3]).upper(), border=1, align='C') 
-                pdf.cell(26, 5, txt=str(det[0][:27]), border=1, align='L')
-                pdf.cell(10, 5, txt=f"{det[3]:.2f}", border=1, align='C')
-                pdf.cell(10, 5, txt=f"{det[4]:.2f}", border=1, align='R')
-                pdf.cell(10, 5, txt=f"{det[5]:.2f}", border=1, ln=True, align='R')
+                lineas_desc = textwrap.wrap(str(det[0]), width=22)
+                if not lineas_desc: lineas_desc = [""]
+
+                if len(lineas_desc) == 1:
+                    pdf.cell(6, 5, txt=str(det[1]), border=1, align='C')
+                    pdf.cell(8, 5, txt=str(det[2][:3]).upper(), border=1, align='C') 
+                    pdf.cell(26, 5, txt=lineas_desc[0], border=1, align='L')
+                    pdf.cell(10, 5, txt=f"{det[3]:.2f}", border=1, align='C')
+                    pdf.cell(10, 5, txt=f"{det[4]:.2f}", border=1, align='R')
+                    pdf.cell(10, 5, txt=f"{det[5]:.2f}", border=1, ln=True, align='R')
+                
+                else:
+                    pdf.cell(6, 5, txt=str(det[1]), border='LTR', align='C')
+                    pdf.cell(8, 5, txt=str(det[2][:3]).upper(), border='LTR', align='C') 
+                    pdf.cell(26, 5, txt=lineas_desc[0], border='LTR', align='L')
+                    pdf.cell(10, 5, txt=f"{det[3]:.2f}", border='LTR', align='C')
+                    pdf.cell(10, 5, txt=f"{det[4]:.2f}", border='LTR', align='R')
+                    pdf.cell(10, 5, txt=f"{det[5]:.2f}", border='LTR', ln=True, align='R')
+
+                    for i, linea_extra in enumerate(lineas_desc[1:]):
+                        es_ultima = (i == len(lineas_desc[1:]) - 1)
+                        borde_estilo = 'LBR' if es_ultima else 'LR'
+                        
+                        pdf.cell(6, 5, txt="", border=borde_estilo, align='C')
+                        pdf.cell(8, 5, txt="", border=borde_estilo, align='C') 
+                        pdf.cell(26, 5, txt=linea_extra, border=borde_estilo, align='L')
+                        pdf.cell(10, 5, txt="", border=borde_estilo, align='C')
+                        pdf.cell(10, 5, txt="", border=borde_estilo, align='R')
+                        pdf.cell(10, 5, txt="", border=borde_estilo, ln=True, align='R')
                 
             pdf.ln(3)
             
@@ -1129,17 +1161,39 @@ def main(page: ft.Page):
             solicitar_password(lambda: anular_venta(id_v, cod))
 
         try:
+            rango = filtro_rango_rep.value
+            fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
+            
+            query = "SELECT id_venta, codigo_ticket, fecha_emision, hora_emision, cliente_nombre, total_pen, total_usd, estado FROM ventas WHERE 1=1"
+            params = []
+            
+            if rango == "Hoy":
+                query += " AND fecha_emision = %s"
+                params.append(fecha_hoy)
+            elif rango == "Últimos 7 días":
+                query += " AND fecha_emision >= %s"
+                params.append(fecha_hoy - datetime.timedelta(days=7))
+            elif rango == "Últimos 30 días":
+                query += " AND fecha_emision >= %s"
+                params.append(fecha_hoy - datetime.timedelta(days=30))
+            elif rango == "Personalizado" and input_fecha_inicio.value and input_fecha_fin.value:
+                query += " AND fecha_emision BETWEEN %s AND %s"
+                params.extend([input_fecha_inicio.value, input_fecha_fin.value])
+                
+            query += " ORDER BY id_venta DESC"
+
             with obtener_cursor() as cursor:
-                fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
-                cursor.execute("SELECT id_venta, codigo_ticket, hora_emision, cliente_nombre, total_pen, total_usd, estado FROM ventas WHERE fecha_emision = %s ORDER BY id_venta DESC", (fecha_hoy,))
+                cursor.execute(query, tuple(params))
                 filas = cursor.fetchall()
 
             for fila in filas:
-                id_v, cod, hora, cliente, t_pen, t_usd, estado = fila
+                id_v, cod, fecha, hora, cliente, t_pen, t_usd, estado = fila 
                 
                 es_anulada = (estado == "Anulada")
                 color_texto = ft.colors.RED if es_anulada else ft.colors.BLACK
                 texto_cliente = f"{cliente} (ANULADO)" if es_anulada else (cliente if cliente else "VARIOS")
+                
+                fecha_hora_str = f"{fecha}  {hora}" 
 
                 btn_ver = ft.IconButton(ft.icons.VISIBILITY, icon_color=ft.colors.BLUE, tooltip="Ver Ticket", data=(id_v, cod), on_click=clic_ver)
                 btn_imprimir = ft.IconButton(ft.icons.PRINT, icon_color=ft.colors.GREEN, tooltip="Imprimir", data=(id_v, cod), on_click=clic_pdf)
@@ -1150,7 +1204,7 @@ def main(page: ft.Page):
                 
                 tabla_ventas_diarias.rows.append(ft.DataRow(cells=[
                     ft.DataCell(ft.Text(cod, color=color_texto)), 
-                    ft.DataCell(ft.Text(str(hora), color=color_texto)),
+                    ft.DataCell(ft.Text(fecha_hora_str, color=color_texto)),
                     ft.DataCell(ft.Text(texto_cliente, color=color_texto, weight=ft.FontWeight.BOLD if es_anulada else ft.FontWeight.NORMAL)),
                     ft.DataCell(ft.Text(f"{t_pen:.2f}", color=color_texto)),
                     ft.DataCell(ft.Text(f"{t_usd:.2f}", color=color_texto)),
@@ -1165,13 +1219,27 @@ def main(page: ft.Page):
 
     def cuadrar_caja_diaria(e):
         try:
+            rango = filtro_rango_rep.value
+            fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
+            
+            query = "SELECT SUM(total_pen), SUM(total_usd), COUNT(id_venta) FROM ventas WHERE estado != 'Anulada'"
+            params = []
+            
+            if rango == "Hoy":
+                query += " AND fecha_emision = %s"
+                params.append(fecha_hoy)
+            elif rango == "Últimos 7 días":
+                query += " AND fecha_emision >= %s"
+                params.append(fecha_hoy - datetime.timedelta(days=7))
+            elif rango == "Últimos 30 días":
+                query += " AND fecha_emision >= %s"
+                params.append(fecha_hoy - datetime.timedelta(days=30))
+            elif rango == "Personalizado" and input_fecha_inicio.value and input_fecha_fin.value:
+                query += " AND fecha_emision BETWEEN %s AND %s"
+                params.extend([input_fecha_inicio.value, input_fecha_fin.value])
+
             with obtener_cursor() as cursor:
-                fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
-                cursor.execute("""
-                    SELECT SUM(total_pen), SUM(total_usd), COUNT(id_venta) 
-                    FROM ventas 
-                    WHERE fecha_emision = %s AND estado != 'Anulada'
-                """, (fecha_hoy,))
+                cursor.execute(query, tuple(params))
                 resultado = cursor.fetchone()
             
             total_pen = resultado[0] if resultado[0] else 0.00
@@ -1250,14 +1318,39 @@ def main(page: ft.Page):
             #print(f"Error al cargar gráfico: {e}")
 
 
+    def cambiar_filtro_reportes(e):
+        es_personalizado = (filtro_rango_rep.value == "Personalizado")
+        input_fecha_inicio.visible = es_personalizado
+        input_fecha_fin.visible = es_personalizado
+        btn_aplicar_fechas.visible = es_personalizado
+        page.update()
+        if not es_personalizado:
+            cargar_ventas_diarias()
+
+    filtro_rango_rep = ft.Dropdown(
+        label="Rango de Fechas",
+        options=[
+            ft.dropdown.Option("Hoy"), ft.dropdown.Option("Últimos 7 días"), 
+            ft.dropdown.Option("Últimos 30 días"), ft.dropdown.Option("Todo el historial"),
+            ft.dropdown.Option("Personalizado")
+        ],
+        value="Hoy", col={"sm": 12, "md": 4}, on_change=cambiar_filtro_reportes
+    )
+    
+    input_fecha_inicio = ft.TextField(label="Inicio (YYYY-MM-DD)", hint_text="Ej: 2026-09-01", col={"sm": 6, "md": 3}, visible=False)
+    input_fecha_fin = ft.TextField(label="Fin (YYYY-MM-DD)", hint_text="Ej: 2026-09-30", col={"sm": 6, "md": 3}, visible=False)
+    btn_aplicar_fechas = ft.ElevatedButton("Aplicar", bgcolor=ft.colors.BLUE, color=ft.colors.WHITE, on_click=lambda _: cargar_ventas_diarias(), col={"sm": 12, "md": 2}, visible=False)
+
     panel_reportes = ft.Container(
         visible=False, 
         **estilo_tarjeta,
         content=ft.Column([
             ft.Text("Cierre de Caja - Historial de Ventas", size=24, weight=ft.FontWeight.BOLD),
             ft.Divider(color="#EEEEEE"),
+            ft.ResponsiveRow([filtro_rango_rep, input_fecha_inicio, input_fecha_fin, btn_aplicar_fechas]),
+            ft.Divider(color=ft.colors.TRANSPARENT, height=10),
             ft.ResponsiveRow([
-                ft.ElevatedButton("Cuadrar Caja Diaria", icon=ft.icons.CALCULATE, bgcolor="#F39C12", color=ft.colors.WHITE, on_click=cuadrar_caja_diaria, col={"sm": 12, "md": 3})
+                ft.ElevatedButton("Cuadrar Caja (Rango Actual)", icon=ft.icons.CALCULATE, bgcolor="#F39C12", color=ft.colors.WHITE, on_click=cuadrar_caja_diaria, col={"sm": 12, "md": 4})
             ]),
             ft.Divider(color=ft.colors.TRANSPARENT, height=10),
             ft.Container(content=tabla_ventas_diarias, padding=ft.Padding(left=0, top=15, right=0, bottom=0))
