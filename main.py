@@ -784,7 +784,7 @@ def main(page: ft.Page):
     )
     input_nombre_prod = ft.TextField(label="Nombre del Producto", col={"sm": 12, "md": 7})
     input_presentacion_prod = ft.TextField(label="Presentación", col={"sm": 12, "md": 5})
-    opciones_cat = ["WHISKY", "WHISKEY", "RON", "PISCO", "VINO", "LICOR", "TEQUILA", "CREMA", "GIN", "VODKA", "VERMOUTH", "BRANDY", "COGNAC", "ESPUMANTE", "CHAMPAGNE", "MEZCAL", "CERVEZA", "RTD", "AGUA", "GASEOSA", "ENERGIZANTE", "AGUA TÓNICA", "GINGER ALE", "JUGO"]
+    opciones_cat = ["WHISKY", "WHISKEY", "RON","HIELO","CIGARRO", "GOLOSINA", "PISCO", "VINO", "LICOR", "TEQUILA", "CREMA", "GIN", "VODKA", "VERMOUTH", "BRANDY", "COGNAC", "ESPUMANTE", "CHAMPAGNE", "MEZCAL", "CERVEZA", "RTD", "AGUA", "GASEOSA", "ENERGIZANTE", "AGUA TÓNICA", "GINGER ALE", "JUGO"]
     dropdown_categoria = ft.Dropdown(
         label="Categoría",
         options=[ft.dropdown.Option(cat) for cat in opciones_cat],
@@ -1104,7 +1104,7 @@ def main(page: ft.Page):
             ruta_pdf = os.path.join("assets", f"{codigo_ticket}.pdf")
             pdf.output(ruta_pdf)
 
-            page.launch_url(f"/{codigo_ticket}.pdf")
+            page.launch_url(f"/{codigo_ticket}.pdf", web_window_name="_blank") 
 
             page.open(ft.SnackBar(ft.Text("✅ ¡PDF generado! Se abrió en una pestaña nueva.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.GREEN, duration=6000))
 
