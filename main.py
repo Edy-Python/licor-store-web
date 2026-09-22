@@ -1383,6 +1383,7 @@ def main(page: ft.Page):
             return
 
         page.rol_usuario = datos_usuario["rol"]
+        page.client_storage.set("rol_usuario", page.rol_usuario)
         vista_login.visible = False
         vista_dashboard.visible = True
 
