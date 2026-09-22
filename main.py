@@ -354,7 +354,16 @@ def main(page: ft.Page):
             ahora_local = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5)))
             fecha_actual = ahora_local.date()
             hora_actual = ahora_local.time()
-            vendedor_actual = page.rol_usuario.upper() if hasattr(page, 'rol_usuario') and page.rol_usuario else "ADMINISTRADOR"
+            
+            rol_actual = page.rol_usuario.upper() if hasattr(page, 'rol_usuario') and page.rol_usuario else "ADMIN"
+            
+            if rol_actual == "ADMIN":
+                vendedor_actual = "CRISTIAN"
+            elif rol_actual == "VENDEDOR":
+                vendedor_actual = "YOSELIN"
+            else:
+                vendedor_actual = rol_actual
+                
             obs = input_observacion.value.strip() if input_observacion.value else "Sin observaciones"
 
             t_pen = sum(item[4] for item in items)
@@ -422,6 +431,8 @@ def main(page: ft.Page):
             page.open(ft.SnackBar(ft.Text(f"❌ Error al procesar el Excel: {ex}", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     def cerrar_sesion(e):
+        page.client_storage.remove("rol_usuario")
+
         page.rol_usuario = None 
         input_usuario.value = ""
         input_password.value = ""
@@ -1414,6 +1425,25 @@ def main(page: ft.Page):
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
         alignment=ft.Alignment(0, 0)
     )
+
+    rol_guardado = page.client_storage.get("rol_usuario")
+    
+    if rol_guardado:
+        page.rol_usuario = rol_guardado
+        vista_login.visible = False
+        vista_dashboard.visible = True
+
+        if page.rol_usuario == "vendedor":
+            seccion_pos.visible = True
+            vista_inventario.visible = False
+            panel_reportes.visible = False
+
+        for boton in menu_lateral.content.controls:
+            if hasattr(boton, 'data') and boton.data in ["Inventario", "Reportes"]:
+                boton.visible = (page.rol_usuario == "admin")
+    else:
+        vista_login.visible = True
+        vista_dashboard.visible = False
 
     page.add(vista_login, vista_dashboard)
 
