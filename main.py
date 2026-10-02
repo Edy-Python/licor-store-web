@@ -1619,7 +1619,6 @@ def main(page: ft.Page):
             pdf.set_font("Arial", size=7)
             pdf.write(4, f"S/ {vuelto:.2f}\n")
 
-            # --- 5. VENDEDOR ---
             pdf.set_font("Arial", 'B', 7)
             pdf.write(4, "Vendedor: ")
             pdf.set_font("Arial", size=7)
