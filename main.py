@@ -522,6 +522,11 @@ def main(page: ft.Page):
     input_pago_tarjeta.on_change = calcular_vuelto
 
     def confirmar_y_guardar_venta(e):
+        # PROTECCIÓN ANTI DOBLE-CLIC
+        e.control.disabled = True
+        e.control.text = "Procesando..."
+        page.update()
+
         try:
             t_pen = sum(float(row.cells[6].content.value) for row in tabla_carrito.rows)
             ef = float(input_pago_efectivo.value) if input_pago_efectivo.value else 0.0
@@ -532,15 +537,19 @@ def main(page: ft.Page):
             if total_pagado < t_pen:
                 page.open(ft.SnackBar(ft.Text("❌ El monto pagado no cubre el total.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
                 return
+                
+            # CORRECCIÓN DE PAGO MIXTO DEL INFORME
+            if (yp + ta) > t_pen:
+                page.open(ft.SnackBar(ft.Text("❌ Yape o Tarjeta no pueden exceder el total del ticket.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+                return
 
             vuelto = total_pagado - t_pen if ef > 0 else 0.0 
-            
             pagos = {"Efectivo": ef, "Yape/Plin": yp, "Tarjeta": ta}
             activos = [k for k, v in pagos.items() if v > 0]
             metodo_principal = "Mixto" if len(activos) > 1 else (activos[0] if activos else "Efectivo")
 
             conn = conectar_db()
-            cursor = conn.cursor()
+            cursor = conn.cursor(buffered=True)
             multiplicadores = {"Unidad": 1, "Pack-4": 4, "Six-pack": 6, "Caja": 12, "Pack-15": 15, "Plancha": 24, "Mix Six": 1, "Mix Caj": 1, "Mix Pla": 1}
 
             items = []
@@ -574,7 +583,7 @@ def main(page: ft.Page):
             rol_actual = page.rol_usuario.upper() if hasattr(page, 'rol_usuario') and page.rol_usuario else "ADMIN"
             vendedor_actual = "CRISTHIAN" if rol_actual == "ADMIN" else ("YOSELIN" if rol_actual == "VENDEDOR" else rol_actual)
                 
-            obs = input_observacion.value.strip() if input_observacion.value else "Sin observaciones"
+            obs = input_observacion.value.strip() if input_observacion.value else ""
             t_usd = sum(item[5] for item in items)
             cursor.execute("""
                 INSERT INTO ventas (codigo_ticket, fecha_emision, hora_emision, vendedor, cliente_nombre, cliente_dni, cliente_direccion, total_pen, total_usd, observaciones, metodo_pago, monto_efectivo, monto_yape, monto_plin, monto_tarjeta, vuelto)
@@ -612,9 +621,12 @@ def main(page: ft.Page):
         except Exception as ex:
             if 'conn' in locals(): conn.rollback()
             print(f"Error procesando: {ex}")
-            page.open(ft.SnackBar(ft.Text(f"Error de base de datos.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+            page.open(ft.SnackBar(ft.Text("Error de base de datos.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
         finally:
             if 'conn' in locals(): conn.close()
+            e.control.disabled = False
+            e.control.text = "Confirmar Venta"
+            page.update()
 
     dialogo_cobro = ft.AlertDialog(
         title=ft.Text("Procesar Cobro", weight=ft.FontWeight.BOLD),
@@ -695,6 +707,8 @@ def main(page: ft.Page):
             ft.DataColumn(ft.Text("Producto")),
             ft.DataColumn(ft.Text("Pres.")),
             ft.DataColumn(ft.Text("Stock")),
+            ft.DataColumn(ft.Text("Costo (S/)", weight=ft.FontWeight.BOLD)),
+            ft.DataColumn(ft.Text("Costo ($)", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Uni (S/)")),
             ft.DataColumn(ft.Text("Caja (S/)")),
             ft.DataColumn(ft.Text("Acciones")),
@@ -706,7 +720,7 @@ def main(page: ft.Page):
         try:
             with obtener_cursor() as cursor:
                 cursor.execute("""
-                SELECT nombre, presentacion, categoria, costo,
+                SELECT nombre, presentacion, categoria, costo, costo_usd,
                        precio_uni_pen, precio_uni_usd, 
                        precio_six_pen, precio_six_usd, 
                        precio_caja_pen, precio_caja_usd, 
@@ -717,7 +731,7 @@ def main(page: ft.Page):
                 datos = cursor.fetchone()
 
             if not datos: return
-            (n, pres, cat, costo_compra, pu_pen, pu_usd, ps_pen, ps_usd, pc_pen, pc_usd, pp_pen, pp_usd, grupo_sur) = datos
+            (n, pres, cat, costo_compra, costo_usd_compra, pu_pen, pu_usd, ps_pen, ps_usd, pc_pen, pc_usd, pp_pen, pp_usd, grupo_sur) = datos
 
         except Exception as e:
             page.open(ft.SnackBar(ft.Text("No se pudo cargar el producto.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
@@ -726,9 +740,11 @@ def main(page: ft.Page):
         input_nom = ft.TextField(label="Nombre del Producto", value=str(n), col={"sm": 12, "md": 12})
         input_pres = ft.TextField(label="Presentación", value=str(pres), col={"sm": 12, "md": 4})
         drop_cat_edit = ft.Dropdown(label="Categoría", options=[ft.dropdown.Option(c) for c in opciones_cat], value=str(cat) if cat else "LICOR", col={"sm": 12, "md": 4})
-        inp_costo_edit = ft.TextField(label="Costo Compra (S/)", value=f"{costo_compra:.2f}" if costo_compra else "0.00", col={"sm": 12, "md": 4})
         
-        inp_grupo_edit = ft.TextField(label="Grupo Surtido", value=str(grupo_sur) if grupo_sur else "", hint_text="Ej: MIKES (Opcional)", col={"sm": 12, "md": 8})
+        inp_costo_edit = ft.TextField(label="Costo (S/)", value=f"{costo_compra:.2f}" if costo_compra else "0.00", col={"sm": 6, "md": 2})
+        inp_costo_usd_edit = ft.TextField(label="Costo ($)", value=f"{costo_usd_compra:.2f}" if costo_usd_compra else "0.00", col={"sm": 6, "md": 2})
+        
+        inp_grupo_edit = ft.TextField(label="Grupo Surtido", value=str(grupo_sur) if grupo_sur else "", hint_text="Ej: MIKES", col={"sm": 12, "md": 12})
         
         inp_pu_pen = ft.TextField(label="Unidad (S/)", value=f"{pu_pen:.2f}", col={"sm": 6, "md": 4})
         inp_pu_usd = ft.TextField(label="Unidad ($)", value=f"{pu_usd:.2f}", col={"sm": 6, "md": 4})
@@ -744,7 +760,7 @@ def main(page: ft.Page):
                 with obtener_cursor(commit=True) as cursor:
                     cursor.execute("""
                         UPDATE productos SET 
-                            nombre = %s, presentacion = %s, categoria = %s, costo = %s,
+                            nombre = %s, presentacion = %s, categoria = %s, costo = %s, costo_usd = %s,
                             precio_uni_pen = %s, precio_uni_usd = %s,
                             precio_six_pen = %s, precio_six_usd = %s,
                             precio_caja_pen = %s, precio_caja_usd = %s,
@@ -754,6 +770,7 @@ def main(page: ft.Page):
                     """, (
                         input_nom.value.strip(), input_pres.value.strip(), drop_cat_edit.value, 
                         float(inp_costo_edit.value) if inp_costo_edit.value else 0.0,
+                        float(inp_costo_usd_edit.value) if inp_costo_usd_edit.value else 0.0,
                         float(inp_pu_pen.value) if inp_pu_pen.value else 0.0, float(inp_pu_usd.value) if inp_pu_usd.value else 0.0,
                         float(inp_ps_pen.value) if inp_ps_pen.value else 0.0, float(inp_ps_usd.value) if inp_ps_usd.value else 0.0,
                         float(inp_pc_pen.value) if inp_pc_pen.value else 0.0, float(inp_pc_usd.value) if inp_pc_usd.value else 0.0,
@@ -773,7 +790,7 @@ def main(page: ft.Page):
                 content=ft.Column([
                     ft.Container(height=10),
                     ft.ResponsiveRow([input_nom]),
-                    ft.ResponsiveRow([input_pres, drop_cat_edit, inp_costo_edit]),
+                    ft.ResponsiveRow([input_pres, drop_cat_edit, inp_costo_edit, inp_costo_usd_edit]),
                     ft.ResponsiveRow([inp_grupo_edit]),
                     ft.Divider(),
                     ft.Text("Precios por Unidad", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
@@ -835,7 +852,7 @@ def main(page: ft.Page):
             cat = filtro_cat_inv.value
             nom = filtro_nom_inv.value.strip() if filtro_nom_inv.value else ""
             
-            query = "SELECT id_producto, nombre, presentacion, stock, precio_uni_pen, precio_caja_pen FROM productos WHERE 1=1"
+            query = "SELECT id_producto, nombre, presentacion, stock, costo, costo_usd, precio_uni_pen, precio_caja_pen FROM productos WHERE 1=1"
             params = []
             
             if cat and cat != "TODAS":
@@ -858,8 +875,11 @@ def main(page: ft.Page):
                 id_real = fila[0] 
                 nombre_prod = str(fila[1])
                 stock_actual = int(fila[3])
+                costo_pen = float(fila[4]) if fila[4] else 0.00
+                costo_usd = float(fila[5]) if fila[5] else 0.00
+                p_uni = float(fila[6]) if fila[6] else 0.00
+                p_caja = float(fila[7]) if fila[7] else 0.00
                 
-                # --- ALERTA VISUAL REPARADA Y MEJORADA ---
                 if stock_actual <= 0:
                     color_alerta = ft.colors.RED
                     icono_alerta = ft.icons.ERROR
@@ -883,8 +903,10 @@ def main(page: ft.Page):
                     ft.DataCell(ft.Text(nombre_prod, color=color_alerta, weight=ft.FontWeight.BOLD if stock_actual <= 0 else ft.FontWeight.NORMAL)), 
                     ft.DataCell(ft.Text(str(fila[2]), color=color_alerta)),
                     ft.DataCell(celda_stock), 
-                    ft.DataCell(ft.Text(f"{fila[4]:.2f}", color=color_alerta)), 
-                    ft.DataCell(ft.Text(f"{fila[5]:.2f}", color=color_alerta)),
+                    ft.DataCell(ft.Text(f"{costo_pen:.2f}", color=ft.colors.RED_700, weight=ft.FontWeight.BOLD)),
+                    ft.DataCell(ft.Text(f"{costo_usd:.2f}", color=ft.colors.RED_700, weight=ft.FontWeight.BOLD)),
+                    ft.DataCell(ft.Text(f"{p_uni:.2f}", color=color_alerta)), 
+                    ft.DataCell(ft.Text(f"{p_caja:.2f}", color=color_alerta)),
                     ft.DataCell(ft.Row([btn_editar, btn_borrar]))
                 ]))
                 correlativo += 1
@@ -932,7 +954,8 @@ def main(page: ft.Page):
             cargar_datos_inventario()
         elif nombre_boton == "Reportes":
             panel_reportes.visible = True
-            cargar_ventas_diarias() 
+            cargar_ventas_diarias()
+            cargar_auditoria_y_utilidad()
         elif nombre_boton == "Cajas":
             panel_cajas.visible = True
             input_fecha_caja.value = str(datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date())
@@ -1057,7 +1080,19 @@ def main(page: ft.Page):
     )
 
     lista_resultados = ft.ListView(spacing=2, padding=5, visible=False, height=150)
-    input_buscar = ft.TextField(label="Buscar Producto", hint_text="Nombre o ID...", on_change=buscar_dinamico, on_submit=agregar_producto, col={"sm": 12, "md": 12, "lg": 12}, prefix_icon=ft.icons.SEARCH, **estilo_input)
+    
+    def limpiar_busqueda(e):
+        input_buscar.value = ""
+        lista_resultados.visible = False
+        page.update()
+
+    input_buscar = ft.TextField(
+        label="Buscar Producto", hint_text="Nombre o ID...", 
+        on_change=buscar_dinamico, on_submit=agregar_producto, 
+        col={"sm": 12, "md": 12, "lg": 12}, prefix_icon=ft.icons.SEARCH, 
+        suffix=ft.IconButton(ft.icons.CLEAR, on_click=limpiar_busqueda),
+        **estilo_input
+    )
 
     panel_izquierdo = ft.Container(
         **estilo_tarjeta,
@@ -1105,9 +1140,10 @@ def main(page: ft.Page):
         options=[ft.dropdown.Option(cat) for cat in opciones_cat],
         col={"sm": 12, "md": 6}
     )
-    input_stock_prod = ft.TextField(label="Stock Inicial", value="0", col={"sm": 12, "md": 4})
-    input_costo_prod = ft.TextField(label="Costo (S/)", value="0.00", col={"sm": 12, "md": 4})
-    input_grupo_prod = ft.TextField(label="Grupo Surtido", hint_text="Ej: MIKES (Opcional)", col={"sm": 12, "md": 4})
+    input_stock_prod = ft.TextField(label="Stock Inicial", value="0", col={"sm": 12, "md": 3})
+    input_costo_prod = ft.TextField(label="Costo (S/)", value="0.00", col={"sm": 6, "md": 3})
+    input_costo_usd_prod = ft.TextField(label="Costo ($)", value="0.00", col={"sm": 6, "md": 3})
+    input_grupo_prod = ft.TextField(label="Grupo Surtido", hint_text="Ej: MIKES (Opcional)", col={"sm": 12, "md": 3})
     input_precio_uni_pen = ft.TextField(label="Unidad (S/)", value="0.00", col={"sm": 6, "md": 4})
     input_precio_uni_usd = ft.TextField(label="Unidad ($)", value="0.00", col={"sm": 6, "md": 4})
     input_precio_six_pen = ft.TextField(label="Six-pack (S/)", value="0.00", col={"sm": 6, "md": 4})
@@ -1148,6 +1184,7 @@ def main(page: ft.Page):
         try:
             stock_ingresado = int(input_stock_prod.value) if input_stock_prod.value.isdigit() else 0
             costo_ingresado = float(input_costo_prod.value) if input_costo_prod.value else 0.00
+            costo_usd_ingresado = float(input_costo_usd_prod.value) if input_costo_usd_prod.value else 0.00
             p_uni_pen = float(input_precio_uni_pen.value) if input_precio_uni_pen.value else 0.00
             p_uni_usd = float(input_precio_uni_usd.value) if input_precio_uni_usd.value else 0.00
             p_six_pen = float(input_precio_six_pen.value) if input_precio_six_pen.value else 0.00
@@ -1165,20 +1202,20 @@ def main(page: ft.Page):
                     id_prod, stock_actual = producto_existente[0], producto_existente[1]
                     nuevo_stock = stock_actual + stock_ingresado
                     cursor.execute(
-                        """UPDATE productos SET stock = %s, categoria = %s, costo = %s, grupo_surtido = %s,
+                        """UPDATE productos SET stock = %s, categoria = %s, costo = %s, costo_usd = %s, grupo_surtido = %s,
                            precio_uni_pen = %s, precio_uni_usd = %s, precio_six_pen = %s, precio_six_usd = %s, 
                            precio_caja_pen = %s, precio_caja_usd = %s, precio_plancha_pen = %s, precio_plancha_usd = %s 
                            WHERE id_producto = %s""",
-                        (nuevo_stock, categoria, costo_ingresado, grupo_ingresado, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd, id_prod)
+                        (nuevo_stock, categoria, costo_ingresado, costo_usd_ingresado, grupo_ingresado, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd, id_prod)
                     )
                     mensaje = f"Se sumaron {stock_ingresado} unidades.\nNuevo stock: {nuevo_stock}"
                 else:
                     cursor.execute(
-                        """INSERT INTO productos (nombre, presentacion, categoria, costo, grupo_surtido, stock, 
+                        """INSERT INTO productos (nombre, presentacion, categoria, costo, costo_usd, grupo_surtido, stock, 
                            precio_uni_pen, precio_uni_usd, precio_six_pen, precio_six_usd, 
                            precio_caja_pen, precio_caja_usd, precio_plancha_pen, precio_plancha_usd) 
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (nombre, presentacion, categoria, costo_ingresado, grupo_ingresado, stock_ingresado, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (nombre, presentacion, categoria, costo_ingresado, costo_usd_ingresado, grupo_ingresado, stock_ingresado, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd)
                     )
                     mensaje = "Producto registrado correctamente."
 
@@ -1191,8 +1228,6 @@ def main(page: ft.Page):
             page.open(ft.SnackBar(ft.Text(f"Error BD: {ex}"), bgcolor=ft.colors.RED))
             
         boton.text = "Guardar"; boton.disabled = False; page.update()
-        boton.disabled = False
-        page.update()
 
     dialogo_producto = ft.AlertDialog(
         title=ft.Text("Registrar Nuevo Producto", weight=ft.FontWeight.BOLD),
@@ -1201,7 +1236,7 @@ def main(page: ft.Page):
             content=ft.Column([
                 ft.Container(height=10),
                 ft.ResponsiveRow([input_nombre_prod, input_presentacion_prod]),
-                ft.ResponsiveRow([dropdown_categoria, input_grupo_prod, input_stock_prod, input_costo_prod]),
+                ft.ResponsiveRow([dropdown_categoria, input_grupo_prod, input_stock_prod, input_costo_prod, input_costo_usd_prod]),
                     ft.Divider(),
                     ft.Text("Precios por Unidad", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
                     ft.ResponsiveRow([input_precio_uni_pen, input_precio_uni_usd]),
@@ -1229,6 +1264,7 @@ def main(page: ft.Page):
             input_grupo_prod.value = ""
             dropdown_categoria.value = None
             input_costo_prod.value = "0.00"
+            input_costo_usd_prod.value = "0.00"
             input_stock_prod.value = "0"
             input_precio_uni_pen.value = "0.00"
             input_precio_uni_usd.value = "0.00"
@@ -1238,7 +1274,6 @@ def main(page: ft.Page):
             input_precio_caja_usd.value = "0.00"
             input_precio_plancha_pen.value = "0.00"
             input_precio_plancha_usd.value = "0.00"
-            
             page.open(dialogo_producto)
 
     opciones_filtro = ["TODAS", "WHISKY", "WHISKEY", "RON", "PISCO", "VINO", "LICOR", "TEQUILA", "CREMA", "GIN", "VODKA", "VERMOUTH", "BRANDY", "COGNAC", "ESPUMANTE", "CHAMPAGNE", "MEZCAL", "CERVEZA", "RTD", "AGUA", "GASEOSA", "ENERGIZANTE", "AGUA TÓNICA", "GINGER ALE", "JUGO"]
@@ -1460,13 +1495,16 @@ def main(page: ft.Page):
             pdf.ln(18) 
             
             pdf.set_font("Arial", 'B', 9)
-            pdf.cell(70, 4, txt=str(c_nom_emp).upper(), ln=True, align='C')
+            if c_nom_emp and str(c_nom_emp).strip():
+                pdf.cell(70, 4, txt=str(c_nom_emp).strip().upper(), ln=True, align='C')
             pdf.set_font("Arial", size=7)
-            if c_ruc_emp: pdf.cell(70, 4, txt=f"RUC: {c_ruc_emp}", ln=True, align='C')
-            if c_dir_emp: 
-                for linea_dir in textwrap.wrap(str(c_dir_emp), width=35):
+            if c_ruc_emp and str(c_ruc_emp).strip(): 
+                pdf.cell(70, 4, txt=f"RUC: {str(c_ruc_emp).strip()}", ln=True, align='C')
+            if c_dir_emp and str(c_dir_emp).strip(): 
+                for linea_dir in textwrap.wrap(str(c_dir_emp).strip(), width=35):
                     pdf.cell(70, 4, txt=linea_dir, ln=True, align='C')
-            if c_tel_emp: pdf.cell(70, 4, txt=f"Cel: {c_tel_emp}", ln=True, align='C')
+            if c_tel_emp and str(c_tel_emp).strip(): 
+                pdf.cell(70, 4, txt=f"Cel: {str(c_tel_emp).strip()}", ln=True, align='C')
             pdf.ln(3)
 
             pdf.set_font("Arial", 'B', 10)
@@ -1536,41 +1574,61 @@ def main(page: ft.Page):
                 
             pdf.ln(2)
             
-            pdf.set_font("Arial", 'B', 7)
             if t_pen > 0:
                 entero = int(t_pen)
                 centimos = int(round((t_pen - entero) * 100))
                 texto_pen = num2words(entero, lang='es').capitalize()
-                pdf.cell(70, 4, txt=f"Son: {texto_pen} con {centimos:02d}/100 Soles", ln=True, align='L')
+                pdf.set_font("Arial", size=7)
+                pdf.write(4, "Son: ")
+                pdf.set_font("Arial", 'B', 7)
+                pdf.write(4, f"{texto_pen} con {centimos:02d}/100 Soles\n")
             
             if t_usd > 0:
                 entero_usd = int(t_usd)
                 centimos_usd = int(round((t_usd - entero_usd) * 100))
                 texto_usd = num2words(entero_usd, lang='es').capitalize()
-                pdf.cell(70, 4, txt=f"Son: {texto_usd} con {centimos_usd:02d}/100 Dólares Americanos", ln=True, align='L')
+                pdf.set_font("Arial", size=7)
+                pdf.write(4, "Son: ")
+                pdf.set_font("Arial", 'B', 7)
+                pdf.write(4, f"{texto_usd} con {centimos_usd:02d}/100 Dólares Americanos\n")
             
             pdf.ln(3)
             
-            pdf.cell(70, 4, txt=f"Condición de Pago: {m_pago}", ln=True, align='L')
+            pdf.set_font("Arial", 'B', 7)
+            pdf.write(4, "Condición de Pago: ")
+            pdf.set_font("Arial", size=7)
+            pdf.write(4, "Contado\n")
+            
+            pdf.set_font("Arial", 'B', 7)
             pdf.cell(70, 4, txt="Pagos:", ln=True, align='L')
             
             total_yape_plin = m_yape + m_plin
             pdf.set_font("Arial", size=7)
-            if m_efec > 0: pdf.cell(70, 4, txt=f"- Efectivo: S/ {m_efec:.2f}", ln=True, align='L')
-            if total_yape_plin > 0: pdf.cell(70, 4, txt=f"- Yape/Plin: S/ {total_yape_plin:.2f}", ln=True, align='L')
-            if m_tarj > 0: pdf.cell(70, 4, txt=f"- Tarjeta: S/ {m_tarj:.2f}", ln=True, align='L')
-            if t_usd > 0: pdf.cell(70, 4, txt=f"- Dólares: $ {t_usd:.2f}", ln=True, align='L')
-                
-            if vuelto > 0:
+            
+            if m_efec > 0: 
+                pdf.cell(70, 4, txt=f"- Efectivo - S/ {m_efec:.2f}", ln=True, align='L')
+            if total_yape_plin > 0: 
+                pdf.cell(70, 4, txt=f"- Yape/Plin - S/ {total_yape_plin:.2f}", ln=True, align='L')
+            if m_tarj > 0: 
+                pdf.cell(70, 4, txt=f"- Tarjeta - S/ {m_tarj:.2f}", ln=True, align='L')
+            if t_usd > 0: 
+                pdf.cell(70, 4, txt=f"- Efectivo - $ {t_usd:.2f}", ln=True, align='L')
+    
+            pdf.set_font("Arial", 'B', 7)
+            pdf.write(4, "Vuelto: ")
+            pdf.set_font("Arial", size=7)
+            pdf.write(4, f"S/ {vuelto:.2f}\n")
+
+            # --- 5. VENDEDOR ---
+            pdf.set_font("Arial", 'B', 7)
+            pdf.write(4, "Vendedor: ")
+            pdf.set_font("Arial", size=7)
+            pdf.write(4, f"{str(vendedor).upper()}\n")
+
+            if c_msg_emp and str(c_msg_emp).strip():
+                pdf.ln(5)
                 pdf.set_font("Arial", 'B', 7)
-                pdf.cell(70, 4, txt=f"VUELTO: S/ {vuelto:.2f}", ln=True, align='L')
-
-            pdf.set_font("Arial", 'B', 7)
-            pdf.cell(70, 4, txt=f"Vendedor: {str(vendedor).upper()}", ln=True, align='L')
-
-            pdf.ln(5)
-            pdf.set_font("Arial", 'B', 7)
-            pdf.cell(70, 4, txt=str(c_msg_emp), ln=True, align='C')
+                pdf.cell(70, 4, txt=str(c_msg_emp).strip(), ln=True, align='C')
 
             import os
             dir_base = os.path.dirname(os.path.abspath(__file__))
@@ -1619,6 +1677,18 @@ def main(page: ft.Page):
     
         page.open(dialogo_anular)
 
+    def limpiar_busqueda_reporte(e):
+        input_buscar_reporte.value = ""
+        cargar_ventas_diarias()
+        page.update()
+
+    input_buscar_reporte = ft.TextField(
+        label="Buscar producto en el historial de ventas...", prefix_icon=ft.icons.SEARCH,
+        suffix=ft.IconButton(ft.icons.CLEAR, on_click=limpiar_busqueda_reporte),
+        on_submit=lambda _: cargar_ventas_diarias(),
+        col={"sm": 12, "md": 8}
+    )
+
     def cargar_ventas_diarias():
         tabla_ventas_diarias.rows.clear()
         
@@ -1637,24 +1707,35 @@ def main(page: ft.Page):
         try:
             rango = filtro_rango_rep.value
             fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
+            busqueda_prod = input_buscar_reporte.value.strip()
+
+            # 2. Modificamos la consulta SQL para que detecte si se busca un producto
+            query = "SELECT DISTINCT v.id_venta, v.codigo_ticket, v.fecha_emision, v.hora_emision, v.cliente_nombre, v.total_pen, v.total_usd, v.estado FROM ventas v"
             
-            query = "SELECT id_venta, codigo_ticket, fecha_emision, hora_emision, cliente_nombre, total_pen, total_usd, estado FROM ventas WHERE 1=1"
+            if busqueda_prod:
+                query += " JOIN detalles_venta d ON v.id_venta = d.id_venta JOIN productos p ON d.id_producto = p.id_producto"
+                
+            query += " WHERE 1=1"
             params = []
             
             if rango == "Hoy":
-                query += " AND fecha_emision = %s"
+                query += " AND v.fecha_emision = %s"
                 params.append(fecha_hoy)
             elif rango == "Últimos 7 días":
-                query += " AND fecha_emision >= %s"
+                query += " AND v.fecha_emision >= %s"
                 params.append(fecha_hoy - datetime.timedelta(days=7))
             elif rango == "Últimos 30 días":
-                query += " AND fecha_emision >= %s"
+                query += " AND v.fecha_emision >= %s"
                 params.append(fecha_hoy - datetime.timedelta(days=30))
             elif rango == "Personalizado" and input_fecha_inicio.value and input_fecha_fin.value:
-                query += " AND fecha_emision BETWEEN %s AND %s"
+                query += " AND v.fecha_emision BETWEEN %s AND %s"
                 params.extend([input_fecha_inicio.value, input_fecha_fin.value])
                 
-            query += " ORDER BY id_venta DESC"
+            if busqueda_prod:
+                query += " AND p.nombre LIKE %s"
+                params.append(f"%{busqueda_prod}%")
+                
+            query += " ORDER BY v.id_venta DESC"
 
             with obtener_cursor() as cursor:
                 cursor.execute(query, tuple(params))
@@ -1662,11 +1743,9 @@ def main(page: ft.Page):
 
             for fila in filas:
                 id_v, cod, fecha, hora, cliente, t_pen, t_usd, estado = fila 
-                
                 es_anulada = (estado == "Anulada")
                 color_texto = ft.colors.RED if es_anulada else ft.colors.BLACK
                 texto_cliente = f"{cliente} (ANULADO)" if es_anulada else (cliente if cliente else "VARIOS")
-                
                 fecha_hora_str = f"{fecha}  {hora}" 
 
                 btn_ver = ft.IconButton(ft.icons.VISIBILITY, icon_color=ft.colors.BLUE, tooltip="Ver Ticket", data=(id_v, cod), on_click=clic_ver)
@@ -1727,35 +1806,27 @@ def main(page: ft.Page):
             dialogo_cuadre = ft.AlertDialog(
                 title=ft.Text("Cuadre de Caja Diaria", weight=ft.FontWeight.BOLD, color="#F39C12"),
                 content=ft.Column([
-                    ft.Text(f"Tickets Válidos Emitidos Hoy: {cantidad_tickets}", size=16),
+                    ft.Text(f"Tickets Válidos Emitidos: {cantidad_tickets}", size=16),
                     ft.Divider(),
                     ft.Text(f"Total Ingresos (S/): {total_pen:.2f}", size=22, weight=ft.FontWeight.BOLD, color=ft.colors.GREEN),
                     ft.Text(f"Total Ingresos ($): {total_usd:.2f}", size=22, weight=ft.FontWeight.BOLD, color=ft.colors.BLUE),
                 ], tight=True),
                 actions=[ft.ElevatedButton("Aceptar", bgcolor=ft.colors.BLACK, color=ft.colors.WHITE, on_click=cerrar_cuadre)]
             )
-            
             page.open(dialogo_cuadre)
-            
         except Exception as ex:
             print(f"Error al cuadrar caja: {ex}")
             page.open(ft.SnackBar(ft.Text("No se pudo calcular el cuadre de caja.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
     grafico_rotacion = ft.BarChart(
-        bar_groups=[],
-        bottom_axis=ft.ChartAxis(labels=[], labels_size=60),
+        bar_groups=[], bottom_axis=ft.ChartAxis(labels=[], labels_size=60),
         horizontal_grid_lines=ft.ChartGridLines(color=ft.colors.GREY_300, width=1, dash_pattern=[3, 3]),
-        tooltip_bgcolor=ft.colors.BLACK87,
-        interactive=True
+        tooltip_bgcolor=ft.colors.BLACK87, interactive=True
     )
 
     contenedor_grafico = ft.Container(
-        content=grafico_rotacion,
-        height=320,
-        padding=20,
-        bgcolor=ft.colors.WHITE,
-        border_radius=10,
-        border=ft.border.all(1, ft.colors.GREY_200)
+        content=grafico_rotacion, height=320, padding=20, bgcolor=ft.colors.WHITE,
+        border_radius=10, border=ft.border.all(1, ft.colors.GREY_200)
     )
 
     def actualizar_grafico_barras():
@@ -1764,19 +1835,8 @@ def main(page: ft.Page):
             fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
 
             query = """
-                SELECT p.nombre,
-                       SUM(
-                           CASE d.tipo_empaque
-                               WHEN 'Unidad' THEN d.cantidad * 1
-                               WHEN 'Six-pack' THEN d.cantidad * 6
-                               WHEN 'Caja' THEN d.cantidad * 12
-                               WHEN 'Plancha' THEN d.cantidad * 24
-                               ELSE d.cantidad
-                           END
-                       ) as unidades_vendidas
-                FROM detalles_venta d
-                JOIN ventas v ON d.id_venta = v.id_venta
-                JOIN productos p ON d.id_producto = p.id_producto
+                SELECT p.nombre, SUM(CASE d.tipo_empaque WHEN 'Unidad' THEN d.cantidad * 1 WHEN 'Six-pack' THEN d.cantidad * 6 WHEN 'Caja' THEN d.cantidad * 12 WHEN 'Plancha' THEN d.cantidad * 24 ELSE d.cantidad END) as unidades_vendidas
+                FROM detalles_venta d JOIN ventas v ON d.id_venta = v.id_venta JOIN productos p ON d.id_producto = p.id_producto
                 WHERE v.estado != 'Anulada'
             """
             params = []
@@ -1810,18 +1870,9 @@ def main(page: ft.Page):
                     nombre_completo = str(fila[0])
                     nombre_corto = nombre_completo[:12] + "..." if len(nombre_completo) > 12 else nombre_completo
                     unidades = float(fila[1]) if fila[1] else 0.0
-
                     if unidades > max_y: max_y = unidades
-
-                    grafico_rotacion.bar_groups.append(
-                        ft.BarChartGroup(
-                            x=i,
-                            bar_rods=[ft.BarChartRod(from_y=0, to_y=unidades, width=35, color=colores[i % len(colores)], tooltip=f"{unidades} unid.")]
-                        )
-                    )
-                    grafico_rotacion.bottom_axis.labels.append(
-                        ft.ChartAxisLabel(value=i, label=ft.Text(nombre_corto, size=11, weight=ft.FontWeight.BOLD))
-                    )
+                    grafico_rotacion.bar_groups.append(ft.BarChartGroup(x=i, bar_rods=[ft.BarChartRod(from_y=0, to_y=unidades, width=35, color=colores[i % len(colores)], tooltip=f"{unidades} unid.")]))
+                    grafico_rotacion.bottom_axis.labels.append(ft.ChartAxisLabel(value=i, label=ft.Text(nombre_corto, size=11, weight=ft.FontWeight.BOLD)))
             else:
                 grafico_rotacion.bar_groups.append(ft.BarChartGroup(x=0, bar_rods=[ft.BarChartRod(from_y=0, to_y=0, width=35, color=ft.colors.GREY)]))
                 grafico_rotacion.bottom_axis.labels.append(ft.ChartAxisLabel(value=0, label=ft.Text("Sin datos", size=11)))
@@ -1832,10 +1883,22 @@ def main(page: ft.Page):
         except Exception as e:
             print(f"Error al cargar gráfico de rotación: {e}")
 
+    def cambiar_fecha_inicio(e):
+        if dp_inicio.value: input_fecha_inicio.value = dp_inicio.value.strftime("%Y-%m-%d"); page.update()
+
+    def cambiar_fecha_fin(e):
+        if dp_fin.value: input_fecha_fin.value = dp_fin.value.strftime("%Y-%m-%d"); page.update()
+
+    dp_inicio = ft.DatePicker(on_change=cambiar_fecha_inicio, cancel_text="Cancelar", confirm_text="Seleccionar")
+    dp_fin = ft.DatePicker(on_change=cambiar_fecha_fin, cancel_text="Cancelar", confirm_text="Seleccionar")
+    page.overlay.extend([dp_inicio, dp_fin])
+
     def cambiar_filtro_reportes(e):
         es_personalizado = (filtro_rango_rep.value == "Personalizado")
         input_fecha_inicio.visible = es_personalizado
+        btn_cal_inicio.visible = es_personalizado
         input_fecha_fin.visible = es_personalizado
+        btn_cal_fin.visible = es_personalizado
         btn_aplicar_fechas.visible = es_personalizado
         page.update()
         if not es_personalizado:
@@ -1844,32 +1907,95 @@ def main(page: ft.Page):
     filtro_rango_rep = ft.Dropdown(
         label="Rango de Fechas",
         options=[
-            ft.dropdown.Option("Hoy"), ft.dropdown.Option("Últimos 7 días"), 
-            ft.dropdown.Option("Últimos 30 días"), ft.dropdown.Option("Todo el historial"),
+            ft.dropdown.Option("Hoy"), 
+            ft.dropdown.Option("Todo el historial"), 
             ft.dropdown.Option("Personalizado")
         ],
         value="Hoy", col={"sm": 12, "md": 4}, on_change=cambiar_filtro_reportes
     )
     
-    input_fecha_inicio = ft.TextField(label="Inicio (YYYY-MM-DD)", hint_text="Ej: 2026-09-01", col={"sm": 6, "md": 3}, visible=False)
-    input_fecha_fin = ft.TextField(label="Fin (YYYY-MM-DD)", hint_text="Ej: 2026-09-30", col={"sm": 6, "md": 3}, visible=False)
-    btn_aplicar_fechas = ft.ElevatedButton("Aplicar", bgcolor=ft.colors.BLUE, color=ft.colors.WHITE, on_click=lambda _: cargar_ventas_diarias(), col={"sm": 12, "md": 2}, visible=False)
+    input_fecha_inicio = ft.TextField(label="Inicio", hint_text="YYYY-MM-DD", read_only=True, visible=False, col={"sm": 8, "md": 3})
+    btn_cal_inicio = ft.IconButton(icon=ft.icons.CALENDAR_MONTH, icon_color=ft.colors.BLUE, on_click=lambda _: page.open(dp_inicio), visible=False, col={"sm": 4, "md": 1})
+
+    input_fecha_fin = ft.TextField(label="Fin", hint_text="YYYY-MM-DD", read_only=True, visible=False, col={"sm": 8, "md": 3})
+    btn_cal_fin = ft.IconButton(icon=ft.icons.CALENDAR_MONTH, icon_color=ft.colors.BLUE, on_click=lambda _: page.open(dp_fin), visible=False, col={"sm": 4, "md": 1})
+
+    btn_aplicar_fechas = ft.ElevatedButton("Aplicar Rango", bgcolor=ft.colors.BLUE, color=ft.colors.WHITE, on_click=lambda _: cargar_ventas_diarias(), col={"sm": 12, "md": 4}, visible=False)
+
+    tabla_auditoria = ft.DataTable(
+        columns=[ft.DataColumn(ft.Text("Fecha/Hora")), ft.DataColumn(ft.Text("Tipo")), ft.DataColumn(ft.Text("Ticket/Prod")), ft.DataColumn(ft.Text("Comentario/Justificación"))], rows=[]
+    )
+    lbl_utilidad_neta = ft.Text("S/ 0.00", size=24, weight=ft.FontWeight.BOLD, color=ft.colors.GREEN)
+
+    def cargar_auditoria_y_utilidad():
+        tabla_auditoria.rows.clear()
+        fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
+        try:
+            with obtener_cursor() as cursor:
+                cursor.execute("SELECT fecha_emision, hora_emision, codigo_ticket, observaciones FROM ventas WHERE fecha_emision = %s AND observaciones != ''", (fecha_hoy,))
+                for v in cursor.fetchall(): tabla_auditoria.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text(f"{v[0]} {v[1]}")), ft.DataCell(ft.Text("Venta", color=ft.colors.BLUE)), ft.DataCell(ft.Text(v[2])), ft.DataCell(ft.Text(v[3]))]))
+                
+                cursor.execute("SELECT fecha_ingreso, p.nombre, comentarios FROM historial_ingresos h JOIN productos p ON h.id_producto = p.id_producto WHERE DATE(fecha_ingreso) = %s AND comentarios != ''", (fecha_hoy,))
+                for i in cursor.fetchall(): tabla_auditoria.rows.append(ft.DataRow(cells=[ft.DataCell(ft.Text(str(i[0])[:16])), ft.DataCell(ft.Text("Ingreso Inv.", color=ft.colors.ORANGE)), ft.DataCell(ft.Text(i[1])), ft.DataCell(ft.Text(i[2]))]))
+                
+                cursor.execute("""
+                    SELECT SUM(d.subtotal_pen), SUM(d.cantidad * p.costo * CASE d.tipo_empaque WHEN 'Unidad' THEN 1 WHEN 'Pack-4' THEN 4 WHEN 'Six-pack' THEN 6 WHEN 'Caja' THEN 12 WHEN 'Pack-15' THEN 15 WHEN 'Plancha' THEN 24 ELSE 1 END) 
+                    FROM detalles_venta d JOIN ventas v ON d.id_venta = v.id_venta JOIN productos p ON d.id_producto = p.id_producto WHERE v.fecha_emision = %s AND v.estado != 'Anulada'
+                """, (fecha_hoy,))
+                resultado = cursor.fetchone()
+                ingresos = resultado[0] if resultado[0] else 0.0; costos = resultado[1] if resultado[1] else 0.0
+                lbl_utilidad_neta.value = f"S/ {ingresos - costos:.2f}"
+            page.update()
+        except Exception as e: print(e)
+
+    tab_graficos = ft.Container(
+        padding=10,
+        visible=True, 
+        content=ft.Column([
+            ft.ResponsiveRow([filtro_rango_rep, input_fecha_inicio, btn_cal_inicio, input_fecha_fin, btn_cal_fin, btn_aplicar_fechas], vertical_alignment=ft.CrossAxisAlignment.CENTER), 
+            ft.ResponsiveRow([input_buscar_reporte, ft.ElevatedButton("Cuadrar Caja (Rango Actual)", icon=ft.icons.CALCULATE, bgcolor="#F39C12", color=ft.colors.WHITE, on_click=cuadrar_caja_diaria, col={"sm": 12, "md": 4})], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            contenedor_grafico, 
+            ft.Column([tabla_ventas_diarias]) 
+        ])
+    )
+    
+    tab_auditoria = ft.Container(
+        padding=10,
+        visible=False,
+        content=ft.Column([
+            ft.Row([ft.Text("Utilidad Neta del Día:", size=18, weight=ft.FontWeight.BOLD), lbl_utilidad_neta]), 
+            ft.Divider(), 
+            ft.Text("Registro de Comentarios y Justificaciones", weight=ft.FontWeight.BOLD), 
+            ft.Column([tabla_auditoria])
+        ])
+    )
+
+    def cambiar_pestana_reportes(e):
+        if e.control.selected_index == 0:
+            tab_graficos.visible = True
+            tab_auditoria.visible = False
+        else:
+            tab_graficos.visible = False
+            tab_auditoria.visible = True
+        page.update()
+
+    tabs_reportes = ft.Tabs(
+        selected_index=0,
+        on_change=cambiar_pestana_reportes,
+        tabs=[
+            ft.Tab(text="Historial y Gráficos"), 
+            ft.Tab(text="Auditoría y Utilidades")
+        ]
+    )
 
     panel_reportes = ft.Container(
         visible=False, 
         **estilo_tarjeta,
         content=ft.Column([
-            ft.Text("Cierre de Caja - Historial de Ventas", size=24, weight=ft.FontWeight.BOLD),
-            ft.Divider(color="#EEEEEE"),
-            ft.ResponsiveRow([filtro_rango_rep, input_fecha_inicio, input_fecha_fin, btn_aplicar_fechas]),
-            ft.Divider(color=ft.colors.TRANSPARENT, height=10),
-            ft.ResponsiveRow([
-                ft.ElevatedButton("Cuadrar Caja (Rango Actual)", icon=ft.icons.CALCULATE, bgcolor="#F39C12", color=ft.colors.WHITE, on_click=cuadrar_caja_diaria, col={"sm": 12, "md": 4})
-            ]),
-            ft.Divider(color=ft.colors.TRANSPARENT, height=10),
-            contenedor_grafico,
-            ft.Divider(color=ft.colors.TRANSPARENT, height=10),
-            ft.Container(content=tabla_ventas_diarias, padding=ft.Padding(left=0, top=15, right=0, bottom=0))
+            ft.Text("Centro de Reportes", size=24, weight=ft.FontWeight.BOLD),
+            tabs_reportes,
+            tab_graficos,
+            tab_auditoria
         ])
     )
 
@@ -1902,21 +2028,22 @@ def main(page: ft.Page):
         try:
             with obtener_cursor() as cursor:
                 cursor.execute("""
-                    SELECT codigo_ticket, hora_emision, metodo_pago, monto_efectivo, monto_yape, monto_plin, monto_tarjeta, total_pen, total_usd 
+                    SELECT codigo_ticket, hora_emision, metodo_pago, monto_efectivo, monto_yape, monto_plin, monto_tarjeta, total_pen, total_usd, vuelto 
                     FROM ventas WHERE fecha_emision = %s AND estado != 'Anulada' ORDER BY hora_emision DESC
                 """, (fecha_consulta,))
                 filas = cursor.fetchall()
 
                 tot_ef, tot_yp, tot_ta, tot_gral, tot_usd = 0.0, 0.0, 0.0, 0.0, 0.0
                 for fila in filas:
-                    cod, hora, met, ef, ya, pl, ta, total, t_usd = fila
+                    cod, hora, met, ef, ya, pl, ta, total, t_usd, vuelto = fila
+                    ef_neto = float(ef) - float(vuelto) 
                     yp_combinado = float(ya) + float(pl)
                     
-                    tot_ef += float(ef); tot_yp += yp_combinado; tot_ta += float(ta); tot_gral += float(total); tot_usd += float(t_usd)
+                    tot_ef += ef_neto; tot_yp += yp_combinado; tot_ta += float(ta); tot_gral += float(total); tot_usd += float(t_usd)
                     
                     tabla_cajas.rows.append(ft.DataRow(cells=[
                         ft.DataCell(ft.Text(cod)), ft.DataCell(ft.Text(str(hora))), ft.DataCell(ft.Text(met)),
-                        ft.DataCell(ft.Text(f"{float(ef):.2f}")), ft.DataCell(ft.Text(f"{yp_combinado:.2f}")), 
+                        ft.DataCell(ft.Text(f"{ef_neto:.2f}")), ft.DataCell(ft.Text(f"{yp_combinado:.2f}")), 
                         ft.DataCell(ft.Text(f"{float(ta):.2f}")), ft.DataCell(ft.Text(f"{float(total):.2f}", weight=ft.FontWeight.BOLD)),
                         ft.DataCell(ft.Text(f"{float(t_usd):.2f}", weight=ft.FontWeight.BOLD, color=ft.colors.GREEN_800))
                     ]))
@@ -1931,14 +2058,32 @@ def main(page: ft.Page):
         except Exception as ex:
             print(f"Error cajas: {ex}")
 
-    input_fecha_caja = ft.TextField(label="Fecha (YYYY-MM-DD)", hint_text="Ej: 2026-09-28", col={"sm": 12, "md": 4})
+    def cambiar_fecha_calendario(e):
+        if date_picker_cajas.value:
+            input_fecha_caja.value = date_picker_cajas.value.strftime("%Y-%m-%d")
+            cargar_datos_cajas()
+
+    date_picker_cajas = ft.DatePicker(
+        on_change=cambiar_fecha_calendario,
+        cancel_text="Cancelar",
+        confirm_text="Seleccionar",
+        help_text="SELECCIONE UNA FECHA",
+        field_hint_text="dd/mm/aaaa",
+        field_label_text="Ingrese una fecha",
+        error_format_text="Formato inválido",
+        error_invalid_text="Fecha fuera de rango"
+    )
+    page.overlay.append(date_picker_cajas)
+
+    input_fecha_caja = ft.TextField(label="Fecha", value=str(datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()), read_only=True, col={"sm": 8, "md": 4})
+    btn_calendario = ft.IconButton(icon=ft.icons.CALENDAR_MONTH, icon_color=ft.colors.BLUE, on_click=lambda _: page.open(date_picker_cajas), col={"sm": 4, "md": 1})
     btn_buscar_caja = ft.ElevatedButton("Buscar Día", on_click=cargar_datos_cajas, bgcolor=ft.colors.BLUE, color=ft.colors.WHITE, col={"sm": 12, "md": 3}, height=50)
 
     panel_cajas = ft.Container(
         visible=False, **estilo_tarjeta,
         content=ft.Column([
             ft.Text("Control de Cajas Diario", size=24, weight=ft.FontWeight.BOLD),
-            ft.ResponsiveRow([input_fecha_caja, btn_buscar_caja]),
+            ft.ResponsiveRow([input_fecha_caja, btn_calendario, btn_buscar_caja]),
             ft.Divider(),
             ft.Row([
                 crear_tarjeta_caja("Efectivo", lbl_caja_efectivo, ft.colors.GREEN),
@@ -2051,6 +2196,38 @@ def main(page: ft.Page):
         ], scroll=ft.ScrollMode.AUTO)
     )
 
+    input_pass_actual = ft.TextField(label="Contraseña Actual", password=True, can_reveal_password=True, col={"sm": 12, "md": 4})
+    input_pass_nueva = ft.TextField(label="Nueva Contraseña", password=True, can_reveal_password=True, col={"sm": 12, "md": 4})
+    
+    def cambiar_password_personal(e):
+        if not input_pass_actual.value or not input_pass_nueva.value:
+            page.open(ft.SnackBar(ft.Text("Rellene ambos campos", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+            return
+            
+        hash_actual = hashlib.sha256(input_pass_actual.value.encode()).hexdigest()
+        hash_nueva = hashlib.sha256(input_pass_nueva.value.encode()).hexdigest()
+        
+        try:
+            with obtener_cursor(commit=True) as cursor:
+                cursor.execute("SELECT id FROM usuarios WHERE rol = %s AND password_hash = %s", (page.rol_usuario, hash_actual))
+                if cursor.fetchone():
+                    cursor.execute("UPDATE usuarios SET password_hash = %s WHERE rol = %s AND password_hash = %s", (hash_nueva, page.rol_usuario, hash_actual))
+                    page.open(ft.SnackBar(ft.Text("✅ Contraseña actualizada con éxito", color=ft.colors.WHITE), bgcolor=ft.colors.GREEN))
+                    input_pass_actual.value = ""; input_pass_nueva.value = ""
+                else:
+                    page.open(ft.SnackBar(ft.Text("❌ La contraseña actual es incorrecta", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+            page.update()
+        except Exception as ex: print(ex)
+
+    tab_perfil = ft.Container(
+        padding=20,
+        content=ft.Column([
+            ft.Text("Cambiar mi contraseña", weight=ft.FontWeight.BOLD, size=16),
+            ft.ResponsiveRow([input_pass_actual, input_pass_nueva]),
+            ft.ElevatedButton("Actualizar Seguridad", bgcolor=ft.colors.BLUE_800, color=ft.colors.WHITE, on_click=cambiar_password_personal)
+        ])
+    )
+
     panel_configuracion = ft.Container(
         visible=False, **estilo_tarjeta, height=700,
         content=ft.Column([
@@ -2059,7 +2236,8 @@ def main(page: ft.Page):
                 selected_index=0, animation_duration=300,
                 tabs=[
                     ft.Tab(text="Datos del Negocio", icon=ft.icons.STORE, content=tab_negocio),
-                    ft.Tab(text="Gestión de Usuarios", icon=ft.icons.PEOPLE, content=tab_usuarios)
+                    ft.Tab(text="Gestión de Usuarios", icon=ft.icons.PEOPLE, content=tab_usuarios),
+                    ft.Tab(text="Mi Perfil", icon=ft.icons.LOCK_PERSON, content=tab_perfil)
                 ],
                 expand=1
             )
