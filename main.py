@@ -225,37 +225,41 @@ def main(page: ft.Page):
         
         try:
             with obtener_cursor() as cursor:
+                # Ahora llamamos a los precios de Pack 4 y 15 también
                 cursor.execute("""
                     SELECT id_producto, nombre, presentacion, 
                            precio_uni_pen, precio_uni_usd, precio_six_pen, precio_six_usd, 
                            precio_caja_pen, precio_caja_usd, precio_plancha_pen, precio_plancha_usd,
-                           grupo_surtido
+                           grupo_surtido, precio_pack4_pen, precio_pack4_usd, precio_pack15_pen, precio_pack15_usd
                     FROM productos WHERE id_producto = %s OR nombre = %s LIMIT 1
                 """, (busqueda if busqueda.isdigit() else 0, busqueda))
                 producto = cursor.fetchone()
 
             if producto:
-                (id_prod, nombre, pres, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd, grupo_sur) = producto
+                (id_prod, nombre, pres, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd, grupo_sur, p_p4_pen, p_p4_usd, p_p15_pen, p_p15_usd) = producto
                 
                 moneda = dropdown_moneda.value
                 empaque = dropdown_empaque.value
                 if grupo_sur and empaque != "Unidad":
-                    multiplicadores = {"Six-pack": 6, "Caja": 12, "Plancha": 24}
-                    unidades_requeridas = multiplicadores[empaque] * cant_ingresada
+                    multiplicadores = {"Pack-4": 4, "Six-pack": 6, "Caja": 12, "Pack-15": 15, "Plancha": 24}
+                    unidades_requeridas = multiplicadores.get(empaque, 1) * cant_ingresada
                     
-                    precio_total_pen = (p_six_pen if empaque=="Six-pack" else (p_caja_pen if empaque=="Caja" else p_plan_pen)) * cant_ingresada
-                    precio_total_usd = (p_six_usd if empaque=="Six-pack" else (p_caja_usd if empaque=="Caja" else p_plan_usd)) * cant_ingresada
+                    if empaque == "Pack-4": p_t_pen = p_p4_pen * cant_ingresada; p_t_usd = p_p4_usd * cant_ingresada
+                    elif empaque == "Six-pack": p_t_pen = p_six_pen * cant_ingresada; p_t_usd = p_six_usd * cant_ingresada
+                    elif empaque == "Caja": p_t_pen = p_caja_pen * cant_ingresada; p_t_usd = p_caja_usd * cant_ingresada
+                    elif empaque == "Pack-15": p_t_pen = p_p15_pen * cant_ingresada; p_t_usd = p_p15_usd * cant_ingresada
+                    else: p_t_pen = p_plan_pen * cant_ingresada; p_t_usd = p_plan_usd * cant_ingresada
                     
                     if input_precio_esp.value:
                         try:
-                            precio_total_pen = float(input_precio_esp.value) * cant_ingresada
-                            precio_total_usd = float(input_precio_esp.value) * cant_ingresada
+                            p_t_pen = float(input_precio_esp.value) * cant_ingresada
+                            p_t_usd = float(input_precio_esp.value) * cant_ingresada
                         except ValueError: pass
 
                     surtidor_estado["requeridas"] = unidades_requeridas
                     surtidor_estado["seleccionadas"] = 0
-                    surtidor_estado["precio_u_pen"] = precio_total_pen / unidades_requeridas if moneda == "PEN" else 0.00
-                    surtidor_estado["precio_u_usd"] = precio_total_usd / unidades_requeridas if moneda == "USD" else 0.00
+                    surtidor_estado["precio_u_pen"] = p_t_pen / unidades_requeridas if moneda == "PEN" else 0.00
+                    surtidor_estado["precio_u_usd"] = p_t_usd / unidades_requeridas if moneda == "USD" else 0.00
                     surtidor_estado["empaque_base"] = empaque
                     
                     with obtener_cursor() as cursor2:
@@ -265,81 +269,68 @@ def main(page: ft.Page):
                     surtidor_items.clear()
                     lista_surtidor_ui.controls.clear()
                     
+                    def llenar_cant_surtidor(item):
+                        faltante = surtidor_estado["requeridas"] - surtidor_estado["seleccionadas"]
+                        if faltante > 0:
+                            posible = min(faltante, item["stock"] - item["cant"])
+                            if posible > 0:
+                                item["cant"] += posible
+                                item["text_cant"].value = str(item["cant"])
+                                actualizar_contador_surtidor()
+
                     for h in hermanos:
                         item_dict = {"id": h[0], "nombre": h[1], "pres": h[2], "stock": int(h[3]), "cant": 0, "text_cant": ft.Text("0", size=16, weight=ft.FontWeight.BOLD)}
                         surtidor_items.append(item_dict)
-                        
                         btn_menos = ft.IconButton(ft.icons.REMOVE_CIRCLE, icon_color=ft.colors.RED, on_click=lambda e, i=item_dict: cambiar_cant_surtidor(i, -1))
                         btn_mas = ft.IconButton(ft.icons.ADD_CIRCLE, icon_color=ft.colors.GREEN, on_click=lambda e, i=item_dict: cambiar_cant_surtidor(i, 1))
-                        
+                        btn_llenar = ft.IconButton(ft.icons.DOUBLE_ARROW, icon_color=ft.colors.BLUE, tooltip="Llenar todo con este", on_click=lambda e, i=item_dict: llenar_cant_surtidor(i))
                         fila_ui = ft.Row([
-                            ft.Container(content=ft.Text(f"{h[1]} ({h[2]})\nStock: {h[3]}", size=12), width=230),
-                            btn_menos, item_dict["text_cant"], btn_mas
+                            ft.Container(content=ft.Text(f"{h[1]} ({h[2]})\nStock: {h[3]}", size=12), width=200),
+                            ft.Row([btn_menos, item_dict["text_cant"], btn_mas, btn_llenar], spacing=0)
                         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+                        
                         lista_surtidor_ui.controls.append(fila_ui)
                     
                     actualizar_contador_surtidor()
                     page.open(dialogo_surtidor)
-                    
                     input_buscar.value = ""; input_cantidad.value = "1"; input_precio_esp.value = ""; lista_resultados.visible = False
                     return
 
                 precio_final = 0.00
                 if empaque == "Unidad": precio_final = p_uni_pen if moneda == "PEN" else p_uni_usd
-                elif empaque == "Pack-4": precio_final = (p_uni_pen * 4) if moneda == "PEN" else (p_uni_usd * 4)
+                elif empaque == "Pack-4": precio_final = p_p4_pen if moneda == "PEN" else p_p4_usd
                 elif empaque == "Six-pack": precio_final = p_six_pen if moneda == "PEN" else p_six_usd
                 elif empaque == "Caja": precio_final = p_caja_pen if moneda == "PEN" else p_caja_usd
-                elif empaque == "Pack-15": precio_final = (p_uni_pen * 15) if moneda == "PEN" else (p_uni_usd * 15)
+                elif empaque == "Pack-15": precio_final = p_p15_pen if moneda == "PEN" else p_p15_usd
                 elif empaque == "Plancha": precio_final = p_plan_pen if moneda == "PEN" else p_plan_usd
                 
                 if input_precio_esp.value:
-                    try:
-                        precio_final = float(input_precio_esp.value)
-                    except ValueError:
-                        pass
+                    try: precio_final = float(input_precio_esp.value)
+                    except ValueError: pass
                 
                 sub_pen = (precio_final * cant_ingresada) if moneda == "PEN" else 0.00
                 sub_usd = (precio_final * cant_ingresada) if moneda == "USD" else 0.00
                 
                 id_formateado = str(id_prod).zfill(3)
-                
                 nueva_fila = ft.DataRow(cells=[
                     ft.DataCell(ft.Container(content=ft.Text(id_formateado), width=30)),
                     ft.DataCell(ft.Container(content=ft.Text(str(nombre), size=12, max_lines=3, overflow=ft.TextOverflow.ELLIPSIS), width=170)),
-                    ft.DataCell(ft.Text(str(pres))),
-                    ft.DataCell(ft.Text(empaque)),
-                    ft.DataCell(ft.Text(str(cant_ingresada))),
-                    ft.DataCell(ft.Text(f"{precio_final:.2f}")),
-                    ft.DataCell(ft.Text(f"{sub_pen:.2f}")),
-                    ft.DataCell(ft.Text(f"{sub_usd:.2f}"))
+                    ft.DataCell(ft.Text(str(pres))), ft.DataCell(ft.Text(empaque)), ft.DataCell(ft.Text(str(cant_ingresada))),
+                    ft.DataCell(ft.Text(f"{precio_final:.2f}")), ft.DataCell(ft.Text(f"{sub_pen:.2f}")), ft.DataCell(ft.Text(f"{sub_usd:.2f}"))
                 ])
                 
                 def accion_borrar_carrito(e):
                     fila = e.control.data
-                    if fila in tabla_carrito.rows:
-                        tabla_carrito.rows.remove(fila)
-                        tabla_carrito.update()
-                        actualizar_totales()
+                    if fila in tabla_carrito.rows: tabla_carrito.rows.remove(fila); tabla_carrito.update(); actualizar_totales()
 
-                btn_eliminar = ft.IconButton(
-                    icon=ft.icons.DELETE, 
-                    icon_color=ft.colors.RED, 
-                    data=nueva_fila, 
-                    on_click=accion_borrar_carrito
-                )
-                
+                btn_eliminar = ft.IconButton(icon=ft.icons.DELETE, icon_color=ft.colors.RED, data=nueva_fila, on_click=accion_borrar_carrito)
                 nueva_fila.cells.append(ft.DataCell(btn_eliminar))
                 tabla_carrito.rows.append(nueva_fila)
                 tabla_carrito.update()
                 
-                input_buscar.value = ""
-                input_cantidad.value = "1"
-                input_precio_esp.value = ""
-                lista_resultados.visible = False
-                actualizar_totales()
+                input_buscar.value = ""; input_cantidad.value = "1"; input_precio_esp.value = ""; lista_resultados.visible = False; actualizar_totales()
             else:
                 page.open(ft.SnackBar(ft.Text("Producto no encontrado."), bgcolor=ft.colors.RED))
-
         except Exception as ex:
             print(f"Error al agregar al carrito: {ex}")
             page.open(ft.SnackBar(ft.Text("Error al agregar el producto.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
@@ -490,9 +481,15 @@ def main(page: ft.Page):
             print(f"Error generando ticket: {e}")
             page.open(ft.SnackBar(ft.Text("No se pudo generar la nota de venta.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
 
-    input_pago_efectivo = ft.TextField(label="Efectivo (S/)", value="0.00", col={"sm": 12, "md": 4})
-    input_pago_yape_plin = ft.TextField(label="Yape / Plin (S/)", value="0.00", col={"sm": 12, "md": 4})
-    input_pago_tarjeta = ft.TextField(label="Tarjeta (S/)", value="0.00", col={"sm": 12, "md": 4})
+    def limpiar_efectivo(e):
+        input_pago_efectivo.value = ""
+        calcular_vuelto()
+        page.update()
+
+    dropdown_condicion_pago = ft.Dropdown(label="Condición", options=[ft.dropdown.Option("Contado"), ft.dropdown.Option("Crédito")], value="Contado", col={"sm": 12, "md": 3})
+    input_pago_efectivo = ft.TextField(label="Efectivo (S/)", value="0.00", col={"sm": 12, "md": 3}, suffix=ft.IconButton(ft.icons.CLEAR, on_click=limpiar_efectivo))
+    input_pago_yape_plin = ft.TextField(label="Yape/Plin (S/)", value="0.00", col={"sm": 12, "md": 3})
+    input_pago_tarjeta = ft.TextField(label="Tarjeta (S/)", value="0.00", col={"sm": 12, "md": 3})
     
     lbl_resumen_cobro = ft.Text("Total a cobrar: S/ 0.00", size=18, weight=ft.FontWeight.BOLD)
     lbl_vuelto = ft.Text("Faltante: S/ 0.00", size=18, weight=ft.FontWeight.BOLD, color=ft.colors.RED)
@@ -522,7 +519,6 @@ def main(page: ft.Page):
     input_pago_tarjeta.on_change = calcular_vuelto
 
     def confirmar_y_guardar_venta(e):
-        # PROTECCIÓN ANTI DOBLE-CLIC
         e.control.disabled = True
         e.control.text = "Procesando..."
         page.update()
@@ -532,27 +528,30 @@ def main(page: ft.Page):
             ef = float(input_pago_efectivo.value) if input_pago_efectivo.value else 0.0
             yp = float(input_pago_yape_plin.value) if input_pago_yape_plin.value else 0.0
             ta = float(input_pago_tarjeta.value) if input_pago_tarjeta.value else 0.0
+            condicion = dropdown_condicion_pago.value
             
             total_pagado = ef + yp + ta
-            if total_pagado < t_pen:
-                page.open(ft.SnackBar(ft.Text("❌ El monto pagado no cubre el total.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
-                return
+            if condicion == "Contado" and total_pagado < t_pen:
+                page.open(ft.SnackBar(ft.Text("❌ Pago insuficiente para Contado.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+                e.control.disabled = False; page.update(); return
                 
-            # CORRECCIÓN DE PAGO MIXTO DEL INFORME
             if (yp + ta) > t_pen:
-                page.open(ft.SnackBar(ft.Text("❌ Yape o Tarjeta no pueden exceder el total del ticket.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
-                return
+                page.open(ft.SnackBar(ft.Text("❌ Yape/Tarjeta no pueden exceder el total.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+                e.control.disabled = False; page.update(); return
 
             vuelto = total_pagado - t_pen if ef > 0 else 0.0 
             pagos = {"Efectivo": ef, "Yape/Plin": yp, "Tarjeta": ta}
             activos = [k for k, v in pagos.items() if v > 0]
-            metodo_principal = "Mixto" if len(activos) > 1 else (activos[0] if activos else "Efectivo")
+            metodo_principal = "Crédito" if condicion == "Crédito" else ("Mixto" if len(activos) > 1 else (activos[0] if activos else "Efectivo"))
 
             conn = conectar_db()
             cursor = conn.cursor(buffered=True)
             multiplicadores = {"Unidad": 1, "Pack-4": 4, "Six-pack": 6, "Caja": 12, "Pack-15": 15, "Plancha": 24, "Mix Six": 1, "Mix Caj": 1, "Mix Pla": 1}
 
             items = []
+            costo_total_ticket_pen = 0.0
+            costo_total_ticket_usd = 0.0
+
             for row in tabla_carrito.rows:
                 id_prod = int(row.cells[0].content.content.value)
                 empaque = row.cells[3].content.value
@@ -562,47 +561,66 @@ def main(page: ft.Page):
                 sub_usd = float(row.cells[7].content.value)
                 descuento_stock = multiplicadores.get(empaque, 1) * cant
 
-                cursor.execute("SELECT nombre, stock FROM productos WHERE id_producto = %s FOR UPDATE", (id_prod,))
+                cursor.execute("""
+                    SELECT nombre, stock, 
+                           costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd, 
+                           costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd, 
+                           costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd
+                    FROM productos WHERE id_producto = %s FOR UPDATE
+                """, (id_prod,))
                 resultado = cursor.fetchone()
 
                 if not resultado or resultado[1] < descuento_stock:
                     conn.rollback()
                     page.open(ft.SnackBar(ft.Text("⛔ Stock insuficiente para procesar la venta.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.RED))
-                    return
+                    e.control.disabled = False; page.update(); return
 
-                items.append((id_prod, empaque, cant, p_unit, sub_pen, sub_usd, descuento_stock))
+                if empaque == "Pack-4": c_u_pen = float(resultado[4]); c_u_usd = float(resultado[5])
+                elif empaque == "Six-pack" or empaque == "Mix Six": c_u_pen = float(resultado[6]); c_u_usd = float(resultado[7])
+                elif empaque == "Caja" or empaque == "Mix Caj": c_u_pen = float(resultado[8]); c_u_usd = float(resultado[9])
+                elif empaque == "Pack-15": c_u_pen = float(resultado[10]); c_u_usd = float(resultado[11])
+                elif empaque == "Plancha" or empaque == "Mix Pla": c_u_pen = float(resultado[12]); c_u_usd = float(resultado[13])
+                else: c_u_pen = float(resultado[2]); c_u_usd = float(resultado[3])
+
+                costo_fila_pen = c_u_pen * cant
+                costo_fila_usd = c_u_usd * cant
+                costo_total_ticket_pen += costo_fila_pen
+                costo_total_ticket_usd += costo_fila_usd
+
+                items.append((id_prod, empaque, cant, p_unit, sub_pen, sub_usd, descuento_stock, c_u_pen, c_u_usd))
 
             cursor.execute("SELECT COUNT(*) FROM ventas")
             total_registros = cursor.fetchone()[0]
             codigo_ticket = f"NV-{total_registros + 1:08d}"
 
             ahora_local = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5)))
-            fecha_actual = ahora_local.date()
-            hora_actual = ahora_local.time()
-            
             rol_actual = page.rol_usuario.upper() if hasattr(page, 'rol_usuario') and page.rol_usuario else "ADMIN"
             vendedor_actual = "CRISTHIAN" if rol_actual == "ADMIN" else ("YOSELIN" if rol_actual == "VENDEDOR" else rol_actual)
-                
             obs = input_observacion.value.strip() if input_observacion.value else ""
             t_usd = sum(item[5] for item in items)
+            
+            utilidad_neta_pen = t_pen - costo_total_ticket_pen
+            utilidad_neta_usd = t_usd - costo_total_ticket_usd
+
             cursor.execute("""
-                INSERT INTO ventas (codigo_ticket, fecha_emision, hora_emision, vendedor, cliente_nombre, cliente_dni, cliente_direccion, total_pen, total_usd, observaciones, metodo_pago, monto_efectivo, monto_yape, monto_plin, monto_tarjeta, vuelto)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (codigo_ticket, fecha_actual, hora_actual, vendedor_actual, input_cliente.value, input_dni.value, input_direccion.value, t_pen, t_usd, obs, metodo_principal, ef, yp, 0.0, ta, vuelto))
+                INSERT INTO ventas (codigo_ticket, fecha_emision, hora_emision, vendedor, cliente_nombre, cliente_dni, cliente_direccion, 
+                total_pen, total_usd, observaciones, condicion_pago, metodo_pago, monto_efectivo, monto_yape, monto_plin, monto_tarjeta, vuelto, utilidad_pen, utilidad_usd)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (codigo_ticket, ahora_local.date(), ahora_local.time(), vendedor_actual, input_cliente.value, input_dni.value, input_direccion.value, 
+                  t_pen, t_usd, obs, condicion, metodo_principal, ef, yp, 0.0, ta, vuelto, utilidad_neta_pen, utilidad_neta_usd))
             
             id_venta = cursor.lastrowid
 
-            for id_prod, empaque, cant, p_unit, sub_pen, sub_usd, descuento_stock in items:
-                cursor.execute("INSERT INTO detalles_venta (id_venta, id_producto, tipo_empaque, cantidad, precio_unitario, subtotal_pen, subtotal_usd) VALUES (%s, %s, %s, %s, %s, %s, %s)", (id_venta, id_prod, empaque, cant, p_unit, sub_pen, sub_usd))
+            for id_prod, empaque, cant, p_unit, sub_pen, sub_usd, descuento_stock, c_pen, c_usd in items:
+                cursor.execute("INSERT INTO detalles_venta (id_venta, id_producto, tipo_empaque, cantidad, precio_unitario, subtotal_pen, subtotal_usd, costo_unitario_pen, costo_unitario_usd) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)", 
+                               (id_venta, id_prod, empaque, cant, p_unit, sub_pen, sub_usd, c_pen, c_usd))
                 cursor.execute("UPDATE productos SET stock = stock - %s WHERE id_producto = %s", (descuento_stock, id_prod))
 
             conn.commit()
             cursor.close()
 
             tabla_carrito.rows.clear()
-            input_dni.value = ""
-            input_cliente.value = ""
-            input_observacion.value = ""
+            input_dni.value = ""; input_cliente.value = ""; input_direccion.value = ""; input_observacion.value = ""
             actualizar_totales()
             page.close(dialogo_cobro)
 
@@ -610,7 +628,7 @@ def main(page: ft.Page):
 
             alerta_venta = ft.AlertDialog(
                 title=ft.Text("¡Venta Realizada!", color=ft.colors.GREEN, weight=ft.FontWeight.BOLD),
-                content=ft.Text(f"Ticket generado: {codigo_ticket}\nEl stock se descontó correctamente.", size=16),
+                content=ft.Text(f"Ticket: {codigo_ticket}\nStock descontado y Utilidad Neta calculada.", size=16),
                 actions=[
                     ft.TextButton("Ver Nota de Venta", on_click=lambda e, id_v=id_venta, cod=codigo_ticket: ver_nota_venta(id_v, cod)),
                     ft.ElevatedButton("Aceptar", bgcolor=ft.colors.GREEN, color=ft.colors.WHITE, on_click=cerrar_alerta_venta)
@@ -623,7 +641,7 @@ def main(page: ft.Page):
             print(f"Error procesando: {ex}")
             page.open(ft.SnackBar(ft.Text("Error de base de datos.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
         finally:
-            if 'conn' in locals(): conn.close()
+            if 'conn' in locals() and conn.is_connected(): conn.close()
             e.control.disabled = False
             e.control.text = "Confirmar Venta"
             page.update()
@@ -631,12 +649,12 @@ def main(page: ft.Page):
     dialogo_cobro = ft.AlertDialog(
         title=ft.Text("Procesar Cobro", weight=ft.FontWeight.BOLD),
         content=ft.Container(
-            width=500,
+            width=550,
             content=ft.Column([
                 lbl_resumen_cobro,
                 ft.Divider(),
-                ft.Text("Ingrese los montos recibidos:", size=14, color=ft.colors.GREY_700),
-                ft.ResponsiveRow([input_pago_efectivo, input_pago_yape_plin, input_pago_tarjeta]),
+                ft.Text("Método y Montos recibidos:", size=14, color=ft.colors.GREY_700),
+                ft.ResponsiveRow([dropdown_condicion_pago, input_pago_efectivo, input_pago_yape_plin, input_pago_tarjeta]),
                 ft.Divider(),
                 lbl_vuelto
             ], tight=True)
@@ -651,9 +669,9 @@ def main(page: ft.Page):
         if not tabla_carrito.rows:
             page.open(ft.SnackBar(ft.Text("⛔ El carrito está vacío.", color=ft.colors.WHITE, weight=ft.FontWeight.BOLD), bgcolor=ft.colors.RED))
             return
-        
         t_pen = sum(float(row.cells[6].content.value) for row in tabla_carrito.rows)
         lbl_resumen_cobro.value = f"Total a cobrar: S/ {t_pen:.2f}"
+        dropdown_condicion_pago.value = "Contado"
         input_pago_efectivo.value = f"{t_pen:.2f}" 
         input_pago_yape_plin.value = "0.00"
         input_pago_tarjeta.value = "0.00"
@@ -716,66 +734,129 @@ def main(page: ft.Page):
         rows=[]
     )
 
-    def abrir_edicion(id_prod):
+    def abrir_visualizador(id_prod):
         try:
             with obtener_cursor() as cursor:
                 cursor.execute("""
-                SELECT nombre, presentacion, categoria, costo, costo_usd,
-                       precio_uni_pen, precio_uni_usd, 
-                       precio_six_pen, precio_six_usd, 
-                       precio_caja_pen, precio_caja_usd, 
-                       precio_plancha_pen, precio_plancha_usd,
-                       grupo_surtido
+                SELECT nombre, presentacion, categoria, grupo_surtido,
+                       costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd,
+                       costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd,
+                       costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd,
+                       precio_uni_pen, precio_uni_usd, precio_pack4_pen, precio_pack4_usd,
+                       precio_six_pen, precio_six_usd, precio_caja_pen, precio_caja_usd,
+                       precio_pack15_pen, precio_pack15_usd, precio_plancha_pen, precio_plancha_usd,
+                       stock
                 FROM productos WHERE id_producto = %s
-            """, (id_prod,))
+                """, (id_prod,))
                 datos = cursor.fetchone()
-
             if not datos: return
-            (n, pres, cat, costo_compra, costo_usd_compra, pu_pen, pu_usd, ps_pen, ps_usd, pc_pen, pc_usd, pp_pen, pp_usd, grupo_sur) = datos
+            
+            (n, pres, cat, grupo_sur, 
+             c_u_pen, c_u_usd, c_p4_pen, c_p4_usd, c_s_pen, c_s_usd, c_c_pen, c_c_usd, c_p15_pen, c_p15_usd, c_pl_pen, c_pl_usd,
+             p_u_pen, p_u_usd, p_p4_pen, p_p4_usd, p_s_pen, p_s_usd, p_c_pen, p_c_usd, p_p15_pen, p_p15_usd, p_pl_pen, p_pl_usd, stock_act) = datos
 
         except Exception as e:
             page.open(ft.SnackBar(ft.Text("No se pudo cargar el producto.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
             return
 
-        input_nom = ft.TextField(label="Nombre del Producto", value=str(n), col={"sm": 12, "md": 12})
+        def text_ro(label, value):
+            return ft.TextField(label=label, value=value, read_only=True, border_color=ft.colors.GREY_300, col={"sm": 4, "md": 2})
+
+        dialogo_ver = ft.AlertDialog(
+            title=ft.Text(f"Información: {n}", weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=850, 
+                content=ft.Column([
+                    ft.ResponsiveRow([
+                        ft.TextField(label="Nombre", value=str(n), read_only=True, col={"sm": 12, "md": 6}),
+                        ft.TextField(label="Presentación", value=str(pres), read_only=True, col={"sm": 6, "md": 3}),
+                        ft.TextField(label="Stock Actual", value=str(stock_act), read_only=True, col={"sm": 6, "md": 3}, text_style=ft.TextStyle(weight=ft.FontWeight.BOLD))
+                    ]),
+                    ft.ResponsiveRow([
+                        ft.TextField(label="Categoría", value=str(cat), read_only=True, col={"sm": 6, "md": 6}),
+                        ft.TextField(label="Grupo Surtido", value=str(grupo_sur), read_only=True, col={"sm": 6, "md": 6})
+                    ]),
+                    ft.Divider(),
+                    ft.Text("COSTOS DE COMPRA", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.RED_700),
+                    ft.ResponsiveRow([text_ro("C. Unid (S/)", f"{c_u_pen:.2f}"), text_ro("C. Unid ($)", f"{c_u_usd:.2f}"), text_ro("C. Pck4 (S/)", f"{c_p4_pen:.2f}"), text_ro("C. Pck4 ($)", f"{c_p4_usd:.2f}"), text_ro("C. Six (S/)", f"{c_s_pen:.2f}"), text_ro("C. Six ($)", f"{c_s_usd:.2f}")]),
+                    ft.ResponsiveRow([text_ro("C. Caja (S/)", f"{c_c_pen:.2f}"), text_ro("C. Caja ($)", f"{c_c_usd:.2f}"), text_ro("C. Pck15 (S/)", f"{c_p15_pen:.2f}"), text_ro("C. Pck15 ($)", f"{c_p15_usd:.2f}"), text_ro("C. Plan (S/)", f"{c_pl_pen:.2f}"), text_ro("C. Plan ($)", f"{c_pl_usd:.2f}")]),
+                    ft.Divider(),
+                    ft.Text("PRECIOS DE VENTA", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREEN_700),
+                    ft.ResponsiveRow([text_ro("P. Unid (S/)", f"{p_u_pen:.2f}"), text_ro("P. Unid ($)", f"{p_u_usd:.2f}"), text_ro("P. Pck4 (S/)", f"{p_p4_pen:.2f}"), text_ro("P. Pck4 ($)", f"{p_p4_usd:.2f}"), text_ro("P. Six (S/)", f"{p_s_pen:.2f}"), text_ro("P. Six ($)", f"{p_s_usd:.2f}")]),
+                    ft.ResponsiveRow([text_ro("P. Caja (S/)", f"{p_c_pen:.2f}"), text_ro("P. Caja ($)", f"{p_c_usd:.2f}"), text_ro("P. Pck15 (S/)", f"{p_p15_pen:.2f}"), text_ro("P. Pck15 ($)", f"{p_p15_usd:.2f}"), text_ro("P. Plan (S/)", f"{p_pl_pen:.2f}"), text_ro("P. Plan ($)", f"{p_pl_usd:.2f}")]),
+                ], scroll=ft.ScrollMode.AUTO, tight=True)
+            ),
+            actions=[ft.ElevatedButton("Cerrar", bgcolor=ft.colors.BLACK, color=ft.colors.WHITE, on_click=lambda e: page.close(dialogo_ver))]
+        )
+        page.open(dialogo_ver)
+    
+    def abrir_edicion(id_prod):
+        try:
+            with obtener_cursor() as cursor:
+                cursor.execute("""
+                SELECT nombre, presentacion, categoria, grupo_surtido,
+                       costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd,
+                       costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd,
+                       costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd,
+                       precio_uni_pen, precio_uni_usd, precio_pack4_pen, precio_pack4_usd,
+                       precio_six_pen, precio_six_usd, precio_caja_pen, precio_caja_usd,
+                       precio_pack15_pen, precio_pack15_usd, precio_plancha_pen, precio_plancha_usd
+                FROM productos WHERE id_producto = %s
+                """, (id_prod,))
+                datos = cursor.fetchone()
+            if not datos: return
+            
+            (n, pres, cat, grupo_sur, 
+             c_u_pen, c_u_usd, c_p4_pen, c_p4_usd, c_s_pen, c_s_usd, c_c_pen, c_c_usd, c_p15_pen, c_p15_usd, c_pl_pen, c_pl_usd,
+             p_u_pen, p_u_usd, p_p4_pen, p_p4_usd, p_s_pen, p_s_usd, p_c_pen, p_c_usd, p_p15_pen, p_p15_usd, p_pl_pen, p_pl_usd) = datos
+
+        except Exception as e:
+            page.open(ft.SnackBar(ft.Text("No se pudo cargar el producto.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
+            return
+
+        input_nom = ft.TextField(label="Nombre del Producto", value=str(n), col={"sm": 12, "md": 8})
         input_pres = ft.TextField(label="Presentación", value=str(pres), col={"sm": 12, "md": 4})
-        drop_cat_edit = ft.Dropdown(label="Categoría", options=[ft.dropdown.Option(c) for c in opciones_cat], value=str(cat) if cat else "LICOR", col={"sm": 12, "md": 4})
+        drop_cat_edit = ft.Dropdown(label="Categoría", options=[ft.dropdown.Option(c) for c in opciones_cat], value=str(cat) if cat else "LICOR", col={"sm": 6, "md": 6})
+        inp_grupo_edit = ft.TextField(label="Grupo Surtido", value=str(grupo_sur) if grupo_sur else "", hint_text="Ej: MIKES", col={"sm": 6, "md": 6})
         
-        inp_costo_edit = ft.TextField(label="Costo (S/)", value=f"{costo_compra:.2f}" if costo_compra else "0.00", col={"sm": 6, "md": 2})
-        inp_costo_usd_edit = ft.TextField(label="Costo ($)", value=f"{costo_usd_compra:.2f}" if costo_usd_compra else "0.00", col={"sm": 6, "md": 2})
-        
-        inp_grupo_edit = ft.TextField(label="Grupo Surtido", value=str(grupo_sur) if grupo_sur else "", hint_text="Ej: MIKES", col={"sm": 12, "md": 12})
-        
-        inp_pu_pen = ft.TextField(label="Unidad (S/)", value=f"{pu_pen:.2f}", col={"sm": 6, "md": 4})
-        inp_pu_usd = ft.TextField(label="Unidad ($)", value=f"{pu_usd:.2f}", col={"sm": 6, "md": 4})
-        inp_ps_pen = ft.TextField(label="Six-pack (S/)", value=f"{ps_pen:.2f}", col={"sm": 6, "md": 4})
-        inp_ps_usd = ft.TextField(label="Six-pack ($)", value=f"{ps_usd:.2f}", col={"sm": 6, "md": 4})
-        inp_pc_pen = ft.TextField(label="Caja (S/)", value=f"{pc_pen:.2f}", col={"sm": 6, "md": 4})
-        inp_pc_usd = ft.TextField(label="Caja ($)", value=f"{pc_usd:.2f}", col={"sm": 6, "md": 4})
-        inp_pp_pen = ft.TextField(label="Plancha (S/)", value=f"{pp_pen:.2f}", col={"sm": 6, "md": 4})
-        inp_pp_usd = ft.TextField(label="Plancha ($)", value=f"{pp_usd:.2f}", col={"sm": 6, "md": 4})
+        # COSTOS INDEPENDIENTES
+        ic_u_pen = ft.TextField(label="C. Unid (S/)", value=f"{c_u_pen:.2f}", col={"sm": 4, "md": 2}); ic_u_usd = ft.TextField(label="C. Unid ($)", value=f"{c_u_usd:.2f}", col={"sm": 4, "md": 2})
+        ic_p4_pen = ft.TextField(label="C. Pck4 (S/)", value=f"{c_p4_pen:.2f}", col={"sm": 4, "md": 2}); ic_p4_usd = ft.TextField(label="C. Pck4 ($)", value=f"{c_p4_usd:.2f}", col={"sm": 4, "md": 2})
+        ic_s_pen = ft.TextField(label="C. Six (S/)", value=f"{c_s_pen:.2f}", col={"sm": 4, "md": 2}); ic_s_usd = ft.TextField(label="C. Six ($)", value=f"{c_s_usd:.2f}", col={"sm": 4, "md": 2})
+        ic_c_pen = ft.TextField(label="C. Caja (S/)", value=f"{c_c_pen:.2f}", col={"sm": 4, "md": 2}); ic_c_usd = ft.TextField(label="C. Caja ($)", value=f"{c_c_usd:.2f}", col={"sm": 4, "md": 2})
+        ic_p15_pen = ft.TextField(label="C. Pck15 (S/)", value=f"{c_p15_pen:.2f}", col={"sm": 4, "md": 2}); ic_p15_usd = ft.TextField(label="C. Pck15 ($)", value=f"{c_p15_usd:.2f}", col={"sm": 4, "md": 2})
+        ic_pl_pen = ft.TextField(label="C. Plan (S/)", value=f"{c_pl_pen:.2f}", col={"sm": 4, "md": 2}); ic_pl_usd = ft.TextField(label="C. Plan ($)", value=f"{c_pl_usd:.2f}", col={"sm": 4, "md": 2})
+
+        # PRECIOS DE VENTA
+        ip_u_pen = ft.TextField(label="P. Unid (S/)", value=f"{p_u_pen:.2f}", col={"sm": 4, "md": 2}); ip_u_usd = ft.TextField(label="P. Unid ($)", value=f"{p_u_usd:.2f}", col={"sm": 4, "md": 2})
+        ip_p4_pen = ft.TextField(label="P. Pck4 (S/)", value=f"{p_p4_pen:.2f}", col={"sm": 4, "md": 2}); ip_p4_usd = ft.TextField(label="P. Pck4 ($)", value=f"{p_p4_usd:.2f}", col={"sm": 4, "md": 2})
+        ip_s_pen = ft.TextField(label="P. Six (S/)", value=f"{p_s_pen:.2f}", col={"sm": 4, "md": 2}); ip_s_usd = ft.TextField(label="P. Six ($)", value=f"{p_s_usd:.2f}", col={"sm": 4, "md": 2})
+        ip_c_pen = ft.TextField(label="P. Caja (S/)", value=f"{p_c_pen:.2f}", col={"sm": 4, "md": 2}); ip_c_usd = ft.TextField(label="P. Caja ($)", value=f"{p_c_usd:.2f}", col={"sm": 4, "md": 2})
+        ip_p15_pen = ft.TextField(label="P. Pck15 (S/)", value=f"{p_p15_pen:.2f}", col={"sm": 4, "md": 2}); ip_p15_usd = ft.TextField(label="P. Pck15 ($)", value=f"{p_p15_usd:.2f}", col={"sm": 4, "md": 2})
+        ip_pl_pen = ft.TextField(label="P. Plan (S/)", value=f"{p_pl_pen:.2f}", col={"sm": 4, "md": 2}); ip_pl_usd = ft.TextField(label="P. Plan ($)", value=f"{p_pl_usd:.2f}", col={"sm": 4, "md": 2})
 
         def guardar_edicion(e):
             try:
                 with obtener_cursor(commit=True) as cursor:
                     cursor.execute("""
                         UPDATE productos SET 
-                            nombre = %s, presentacion = %s, categoria = %s, costo = %s, costo_usd = %s,
-                            precio_uni_pen = %s, precio_uni_usd = %s,
-                            precio_six_pen = %s, precio_six_usd = %s,
-                            precio_caja_pen = %s, precio_caja_usd = %s,
-                            precio_plancha_pen = %s, precio_plancha_usd = %s,
-                            grupo_surtido = %s
+                            nombre=%s, presentacion=%s, categoria=%s, grupo_surtido=%s,
+                            costo_uni_pen=%s, costo_uni_usd=%s, costo_pack4_pen=%s, costo_pack4_usd=%s,
+                            costo_six_pen=%s, costo_six_usd=%s, costo_caja_pen=%s, costo_caja_usd=%s,
+                            costo_pack15_pen=%s, costo_pack15_usd=%s, costo_plancha_pen=%s, costo_plancha_usd=%s,
+                            precio_uni_pen=%s, precio_uni_usd=%s, precio_pack4_pen=%s, precio_pack4_usd=%s,
+                            precio_six_pen=%s, precio_six_usd=%s, precio_caja_pen=%s, precio_caja_usd=%s,
+                            precio_pack15_pen=%s, precio_pack15_usd=%s, precio_plancha_pen=%s, precio_plancha_usd=%s
                         WHERE id_producto = %s
                     """, (
-                        input_nom.value.strip(), input_pres.value.strip(), drop_cat_edit.value, 
-                        float(inp_costo_edit.value) if inp_costo_edit.value else 0.0,
-                        float(inp_costo_usd_edit.value) if inp_costo_usd_edit.value else 0.0,
-                        float(inp_pu_pen.value) if inp_pu_pen.value else 0.0, float(inp_pu_usd.value) if inp_pu_usd.value else 0.0,
-                        float(inp_ps_pen.value) if inp_ps_pen.value else 0.0, float(inp_ps_usd.value) if inp_ps_usd.value else 0.0,
-                        float(inp_pc_pen.value) if inp_pc_pen.value else 0.0, float(inp_pc_usd.value) if inp_pc_usd.value else 0.0,
-                        float(inp_pp_pen.value) if inp_pp_pen.value else 0.0, float(inp_pp_usd.value) if inp_pp_usd.value else 0.0,
-                        inp_grupo_edit.value.strip().upper(), id_prod
+                        input_nom.value.strip(), input_pres.value.strip(), drop_cat_edit.value, inp_grupo_edit.value.strip().upper(),
+                        float(ic_u_pen.value), float(ic_u_usd.value), float(ic_p4_pen.value), float(ic_p4_usd.value),
+                        float(ic_s_pen.value), float(ic_s_usd.value), float(ic_c_pen.value), float(ic_c_usd.value),
+                        float(ic_p15_pen.value), float(ic_p15_usd.value), float(ic_pl_pen.value), float(ic_pl_usd.value),
+                        float(ip_u_pen.value), float(ip_u_usd.value), float(ip_p4_pen.value), float(ip_p4_usd.value),
+                        float(ip_s_pen.value), float(ip_s_usd.value), float(ip_c_pen.value), float(ip_c_usd.value),
+                        float(ip_p15_pen.value), float(ip_p15_usd.value), float(ip_pl_pen.value), float(ip_pl_usd.value),
+                        id_prod
                     ))
                 page.close(dialogo_editar)
                 cargar_datos_inventario()
@@ -786,21 +867,18 @@ def main(page: ft.Page):
         dialogo_editar = ft.AlertDialog(
             title=ft.Text("Modificar Producto", weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                width=650, 
+                width=850, 
                 content=ft.Column([
-                    ft.Container(height=10),
-                    ft.ResponsiveRow([input_nom]),
-                    ft.ResponsiveRow([input_pres, drop_cat_edit, inp_costo_edit, inp_costo_usd_edit]),
-                    ft.ResponsiveRow([inp_grupo_edit]),
+                    ft.ResponsiveRow([input_nom, input_pres]),
+                    ft.ResponsiveRow([drop_cat_edit, inp_grupo_edit]),
                     ft.Divider(),
-                    ft.Text("Precios por Unidad", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([inp_pu_pen, inp_pu_usd]),
-                    ft.Text("Precios por Six-pack", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([inp_ps_pen, inp_ps_usd]),
-                    ft.Text("Precios por Caja", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([inp_pc_pen, inp_pc_usd]),
-                    ft.Text("Precios por Plancha", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([inp_pp_pen, inp_pp_usd]),
+                    ft.Text("COSTOS DE COMPRA", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.RED_700),
+                    ft.ResponsiveRow([ic_u_pen, ic_u_usd, ic_p4_pen, ic_p4_usd, ic_s_pen, ic_s_usd]),
+                    ft.ResponsiveRow([ic_c_pen, ic_c_usd, ic_p15_pen, ic_p15_usd, ic_pl_pen, ic_pl_usd]),
+                    ft.Divider(),
+                    ft.Text("PRECIOS DE VENTA", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREEN_700),
+                    ft.ResponsiveRow([ip_u_pen, ip_u_usd, ip_p4_pen, ip_p4_usd, ip_s_pen, ip_s_usd]),
+                    ft.ResponsiveRow([ip_c_pen, ip_c_usd, ip_p15_pen, ip_p15_usd, ip_pl_pen, ip_pl_usd]),
                 ], scroll=ft.ScrollMode.AUTO, tight=True)
             ),
             actions=[
@@ -872,7 +950,8 @@ def main(page: ft.Page):
 
             correlativo = 1
             for fila in filas:
-                id_real = fila[0] 
+                st = int(fila[3])
+                id_real = fila[0]
                 nombre_prod = str(fila[1])
                 stock_actual = int(fila[3])
                 costo_pen = float(fila[4]) if fila[4] else 0.00
@@ -895,6 +974,8 @@ def main(page: ft.Page):
                 else:
                     celda_stock = ft.Text(str(stock_actual), color=color_alerta)
                 
+                btn_ver = ft.IconButton(ft.icons.VISIBILITY, icon_color=ft.colors.GREEN, on_click=lambda e, i=fila[0]: abrir_visualizador(i))
+                btn_ed = ft.IconButton(ft.icons.EDIT, icon_color=ft.colors.BLUE, on_click=lambda e, i=fila[0]: solicitar_password(lambda: abrir_edicion(i)))
                 btn_editar = ft.IconButton(ft.icons.EDIT, icon_color=ft.colors.BLUE, on_click=lambda e, i=id_real: solicitar_password(lambda: abrir_edicion(i)))
                 btn_borrar = ft.IconButton(ft.icons.DELETE, icon_color=ft.colors.RED, on_click=lambda e, i=id_real, n=nombre_prod: solicitar_password(lambda: confirmar_eliminacion(i, n)))
                 
@@ -907,7 +988,7 @@ def main(page: ft.Page):
                     ft.DataCell(ft.Text(f"{costo_usd:.2f}", color=ft.colors.RED_700, weight=ft.FontWeight.BOLD)),
                     ft.DataCell(ft.Text(f"{p_uni:.2f}", color=color_alerta)), 
                     ft.DataCell(ft.Text(f"{p_caja:.2f}", color=color_alerta)),
-                    ft.DataCell(ft.Row([btn_editar, btn_borrar]))
+                    ft.DataCell(ft.Row([btn_ver, btn_editar, btn_borrar]))
                 ]))
                 correlativo += 1
 
@@ -1033,7 +1114,9 @@ def main(page: ft.Page):
     estilo_input = {"border_color": "#CBD5E1", "focused_border_color": "#2563EB", "border_radius": 8}
 
     input_dni = ft.TextField(label="DNI/RUC", hint_text="00000000", col={"sm": 12, "md": 4, "lg": 3}, on_change=buscar_cliente_historial, **estilo_input)
-    input_cliente = ft.TextField(label="Cliente", hint_text="Varios", col={"sm": 12, "md": 8, "lg": 5}, **estilo_input)
+    
+    input_cliente = ft.TextField(label="Cliente", hint_text="", col={"sm": 12, "md": 8, "lg": 5}, **estilo_input)
+    
     input_direccion = ft.TextField(label="Dirección", value="Tacna", col={"sm": 12, "md": 12, "lg": 4}, **estilo_input)
     
     dropdown_empaque = ft.Dropdown(
@@ -1045,14 +1128,31 @@ def main(page: ft.Page):
             ft.dropdown.Option("Pack-15"), 
             ft.dropdown.Option("Plancha")
         ],
-        value="Unidad", col={"sm": 6, "md": 3, "lg": 3}, **estilo_input
+        value="Unidad", col={"sm": 6, "md": 3, "lg": 2}, **estilo_input
+    )
+
+    def restar_cant(e):
+        val = int(input_cantidad.value) if input_cantidad.value and input_cantidad.value.isdigit() else 1
+        if val > 1:
+            input_cantidad.value = str(val - 1)
+            page.update()
+
+    def sumar_cant(e):
+        val = int(input_cantidad.value) if input_cantidad.value and input_cantidad.value.isdigit() else 1
+        input_cantidad.value = str(val + 1)
+        page.update()
+
+    input_cantidad = ft.TextField(
+        label="Cant.", value="1", keyboard_type=ft.KeyboardType.NUMBER, text_align=ft.TextAlign.CENTER,
+        prefix=ft.IconButton(ft.icons.REMOVE, on_click=restar_cant, icon_color=ft.colors.RED_700),
+        suffix=ft.IconButton(ft.icons.ADD, on_click=sumar_cant, icon_color=ft.colors.GREEN_700),
+        on_submit=agregar_producto, col={"sm": 6, "md": 3, "lg": 3}, **estilo_input
     )
     
-    input_cantidad = ft.TextField(label="Cant.", value="1", keyboard_type=ft.KeyboardType.NUMBER, col={"sm": 3, "md": 2, "lg": 2}, on_submit=agregar_producto, **estilo_input)
-    input_precio_esp = ft.TextField(label="P. Esp.", hint_text="Opcional", keyboard_type=ft.KeyboardType.NUMBER, col={"sm": 3, "md": 2, "lg": 2}, on_submit=agregar_producto, **estilo_input)
-    dropdown_moneda = ft.Dropdown(label="Moneda", options=[ft.dropdown.Option("PEN"), ft.dropdown.Option("USD")], value="PEN", col={"sm": 4, "md": 2, "lg": 2}, **estilo_input)
+    input_precio_esp = ft.TextField(label="P. Esp.", hint_text="Opcional", keyboard_type=ft.KeyboardType.NUMBER, col={"sm": 6, "md": 2, "lg": 2}, on_submit=agregar_producto, **estilo_input)
+    dropdown_moneda = ft.Dropdown(label="Moneda", options=[ft.dropdown.Option("PEN"), ft.dropdown.Option("USD")], value="PEN", col={"sm": 6, "md": 2, "lg": 2}, **estilo_input)
     
-    btn_agregar = ft.ElevatedButton("Agregar", icon=ft.icons.ADD_SHOPPING_CART, style=ft.ButtonStyle(color=ft.colors.WHITE, bgcolor="#10B981", shape=ft.RoundedRectangleBorder(radius=8)), height=50, on_click=agregar_producto, col={"sm": 8, "md": 3, "lg": 3})
+    btn_agregar = ft.ElevatedButton("Agregar", icon=ft.icons.ADD_SHOPPING_CART, style=ft.ButtonStyle(color=ft.colors.WHITE, bgcolor="#10B981", shape=ft.RoundedRectangleBorder(radius=8)), height=50, on_click=agregar_producto, col={"sm": 12, "md": 2, "lg": 3})
     
     input_observacion = ft.TextField(label="Comentarios de la venta (Opcional)", col={"sm": 12}, **estilo_input)
 
@@ -1135,42 +1235,33 @@ def main(page: ft.Page):
     input_nombre_prod = ft.TextField(label="Nombre del Producto", col={"sm": 12, "md": 7})
     input_presentacion_prod = ft.TextField(label="Presentación", col={"sm": 12, "md": 5})
     opciones_cat = ["WHISKY", "WHISKEY", "RON","HIELO","CIGARRO", "GOLOSINA", "PISCO", "VINO", "LICOR", "TEQUILA", "CREMA", "GIN", "VODKA", "VERMOUTH", "BRANDY", "COGNAC", "ESPUMANTE", "CHAMPAGNE", "MEZCAL", "CERVEZA", "RTD", "AGUA", "GASEOSA", "ENERGIZANTE", "AGUA TÓNICA", "GINGER ALE", "JUGO"]
-    dropdown_categoria = ft.Dropdown(
-        label="Categoría",
-        options=[ft.dropdown.Option(cat) for cat in opciones_cat],
-        col={"sm": 12, "md": 6}
-    )
-    input_stock_prod = ft.TextField(label="Stock Inicial", value="0", col={"sm": 12, "md": 3})
-    input_costo_prod = ft.TextField(label="Costo (S/)", value="0.00", col={"sm": 6, "md": 3})
-    input_costo_usd_prod = ft.TextField(label="Costo ($)", value="0.00", col={"sm": 6, "md": 3})
-    input_grupo_prod = ft.TextField(label="Grupo Surtido", hint_text="Ej: MIKES (Opcional)", col={"sm": 12, "md": 3})
-    input_precio_uni_pen = ft.TextField(label="Unidad (S/)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_uni_usd = ft.TextField(label="Unidad ($)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_six_pen = ft.TextField(label="Six-pack (S/)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_six_usd = ft.TextField(label="Six-pack ($)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_caja_pen = ft.TextField(label="Caja (S/)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_caja_usd = ft.TextField(label="Caja ($)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_plancha_pen = ft.TextField(label="Plancha (S/)", value="0.00", col={"sm": 6, "md": 4})
-    input_precio_plancha_usd = ft.TextField(label="Plancha ($)", value="0.00", col={"sm": 6, "md": 4})
+    dropdown_categoria = ft.Dropdown(label="Categoría", options=[ft.dropdown.Option(cat) for cat in opciones_cat], col={"sm": 6, "md": 4})
+    input_grupo_prod = ft.TextField(label="Grupo Surtido", hint_text="Ej: MIKES", col={"sm": 6, "md": 4})
+    input_stock_prod = ft.TextField(label="Stock Inicial", value="0", col={"sm": 12, "md": 4})
+    
+    # COSTOS DE COMPRA
+    c_u_pen = ft.TextField(label="C. Unid (S/)", value="0.00", col={"sm": 4, "md": 2}); c_u_usd = ft.TextField(label="C. Unid ($)", value="0.00", col={"sm": 4, "md": 2})
+    c_p4_pen = ft.TextField(label="C. Pck4 (S/)", value="0.00", col={"sm": 4, "md": 2}); c_p4_usd = ft.TextField(label="C. Pck4 ($)", value="0.00", col={"sm": 4, "md": 2})
+    c_s_pen = ft.TextField(label="C. Six (S/)", value="0.00", col={"sm": 4, "md": 2}); c_s_usd = ft.TextField(label="C. Six ($)", value="0.00", col={"sm": 4, "md": 2})
+    c_c_pen = ft.TextField(label="C. Caja (S/)", value="0.00", col={"sm": 4, "md": 2}); c_c_usd = ft.TextField(label="C. Caja ($)", value="0.00", col={"sm": 4, "md": 2})
+    c_p15_pen = ft.TextField(label="C. Pck15 (S/)", value="0.00", col={"sm": 4, "md": 2}); c_p15_usd = ft.TextField(label="C. Pck15 ($)", value="0.00", col={"sm": 4, "md": 2})
+    c_pl_pen = ft.TextField(label="C. Plan (S/)", value="0.00", col={"sm": 4, "md": 2}); c_pl_usd = ft.TextField(label="C. Plan ($)", value="0.00", col={"sm": 4, "md": 2})
 
-    dialogo_exito = ft.AlertDialog(
-        title=ft.Text("¡Operación Exitosa!", color=ft.colors.GREEN, weight=ft.FontWeight.BOLD),
-        content=ft.Text(""), 
-        actions=[ft.ElevatedButton("Aceptar", on_click=lambda _: cerrar_dialogo_exito())]
-    )
+    # PRECIOS DE VENTA
+    p_u_pen = ft.TextField(label="P. Unid (S/)", value="0.00", col={"sm": 4, "md": 2}); p_u_usd = ft.TextField(label="P. Unid ($)", value="0.00", col={"sm": 4, "md": 2})
+    p_p4_pen = ft.TextField(label="P. Pck4 (S/)", value="0.00", col={"sm": 4, "md": 2}); p_p4_usd = ft.TextField(label="P. Pck4 ($)", value="0.00", col={"sm": 4, "md": 2})
+    p_s_pen = ft.TextField(label="P. Six (S/)", value="0.00", col={"sm": 4, "md": 2}); p_s_usd = ft.TextField(label="P. Six ($)", value="0.00", col={"sm": 4, "md": 2})
+    p_c_pen = ft.TextField(label="P. Caja (S/)", value="0.00", col={"sm": 4, "md": 2}); p_c_usd = ft.TextField(label="P. Caja ($)", value="0.00", col={"sm": 4, "md": 2})
+    p_p15_pen = ft.TextField(label="P. Pck15 (S/)", value="0.00", col={"sm": 4, "md": 2}); p_p15_usd = ft.TextField(label="P. Pck15 ($)", value="0.00", col={"sm": 4, "md": 2})
+    p_pl_pen = ft.TextField(label="P. Plan (S/)", value="0.00", col={"sm": 4, "md": 2}); p_pl_usd = ft.TextField(label="P. Plan ($)", value="0.00", col={"sm": 4, "md": 2})
 
-    def cerrar_dialogo_exito():
-        page.close(dialogo_exito)
-
-    def cerrar_dialogo(e):
-        page.close(dialogo_producto)
+    dialogo_exito = ft.AlertDialog(title=ft.Text("¡Operación Exitosa!", color=ft.colors.GREEN, weight=ft.FontWeight.BOLD), content=ft.Text(""), actions=[ft.ElevatedButton("Aceptar", on_click=lambda _: page.close(dialogo_exito))])
+    def cerrar_dialogo(e): page.close(dialogo_producto)
 
     def guardar_producto_bd(e):
         boton = e.control
-        boton.text = "Guardando..."
-        boton.disabled = True
-        page.update()
-
+        boton.text = "Guardando..."; boton.disabled = True; page.update()
+        
         nombre = input_nombre_prod.value.strip()
         presentacion = input_presentacion_prod.value.strip()
         categoria = dropdown_categoria.value if dropdown_categoria.value else "LICOR"
@@ -1183,40 +1274,31 @@ def main(page: ft.Page):
 
         try:
             stock_ingresado = int(input_stock_prod.value) if input_stock_prod.value.isdigit() else 0
-            costo_ingresado = float(input_costo_prod.value) if input_costo_prod.value else 0.00
-            costo_usd_ingresado = float(input_costo_usd_prod.value) if input_costo_usd_prod.value else 0.00
-            p_uni_pen = float(input_precio_uni_pen.value) if input_precio_uni_pen.value else 0.00
-            p_uni_usd = float(input_precio_uni_usd.value) if input_precio_uni_usd.value else 0.00
-            p_six_pen = float(input_precio_six_pen.value) if input_precio_six_pen.value else 0.00
-            p_six_usd = float(input_precio_six_usd.value) if input_precio_six_usd.value else 0.00
-            p_caja_pen = float(input_precio_caja_pen.value) if input_precio_caja_pen.value else 0.00
-            p_caja_usd = float(input_precio_caja_usd.value) if input_precio_caja_usd.value else 0.00
-            p_plan_pen = float(input_precio_plancha_pen.value) if input_precio_plancha_pen.value else 0.00
-            p_plan_usd = float(input_precio_plancha_usd.value) if input_precio_plancha_usd.value else 0.00
-
             with obtener_cursor(commit=True) as cursor:
                 cursor.execute("SELECT id_producto, stock FROM productos WHERE nombre = %s AND presentacion = %s LIMIT 1", (nombre, presentacion))
-                producto_existente = cursor.fetchone()
+                prod_existente = cursor.fetchone()
 
-                if producto_existente:
-                    id_prod, stock_actual = producto_existente[0], producto_existente[1]
-                    nuevo_stock = stock_actual + stock_ingresado
-                    cursor.execute(
-                        """UPDATE productos SET stock = %s, categoria = %s, costo = %s, costo_usd = %s, grupo_surtido = %s,
-                           precio_uni_pen = %s, precio_uni_usd = %s, precio_six_pen = %s, precio_six_usd = %s, 
-                           precio_caja_pen = %s, precio_caja_usd = %s, precio_plancha_pen = %s, precio_plancha_usd = %s 
-                           WHERE id_producto = %s""",
-                        (nuevo_stock, categoria, costo_ingresado, costo_usd_ingresado, grupo_ingresado, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd, id_prod)
-                    )
+                if prod_existente:
+                    nuevo_stock = prod_existente[1] + stock_ingresado
+                    cursor.execute("""
+                        UPDATE productos SET stock=%s, categoria=%s, grupo_surtido=%s,
+                        costo_uni_pen=%s, costo_uni_usd=%s, costo_pack4_pen=%s, costo_pack4_usd=%s, costo_six_pen=%s, costo_six_usd=%s, costo_caja_pen=%s, costo_caja_usd=%s, costo_pack15_pen=%s, costo_pack15_usd=%s, costo_plancha_pen=%s, costo_plancha_usd=%s,
+                        precio_uni_pen=%s, precio_uni_usd=%s, precio_pack4_pen=%s, precio_pack4_usd=%s, precio_six_pen=%s, precio_six_usd=%s, precio_caja_pen=%s, precio_caja_usd=%s, precio_pack15_pen=%s, precio_pack15_usd=%s, precio_plancha_pen=%s, precio_plancha_usd=%s
+                        WHERE id_producto = %s
+                    """, (nuevo_stock, categoria, grupo_ingresado, 
+                          float(c_u_pen.value), float(c_u_usd.value), float(c_p4_pen.value), float(c_p4_usd.value), float(c_s_pen.value), float(c_s_usd.value), float(c_c_pen.value), float(c_c_usd.value), float(c_p15_pen.value), float(c_p15_usd.value), float(c_pl_pen.value), float(c_pl_usd.value),
+                          float(p_u_pen.value), float(p_u_usd.value), float(p_p4_pen.value), float(p_p4_usd.value), float(p_s_pen.value), float(p_s_usd.value), float(p_c_pen.value), float(p_c_usd.value), float(p_p15_pen.value), float(p_p15_usd.value), float(p_pl_pen.value), float(p_pl_usd.value),
+                          prod_existente[0]))
                     mensaje = f"Se sumaron {stock_ingresado} unidades.\nNuevo stock: {nuevo_stock}"
                 else:
-                    cursor.execute(
-                        """INSERT INTO productos (nombre, presentacion, categoria, costo, costo_usd, grupo_surtido, stock, 
-                           precio_uni_pen, precio_uni_usd, precio_six_pen, precio_six_usd, 
-                           precio_caja_pen, precio_caja_usd, precio_plancha_pen, precio_plancha_usd) 
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (nombre, presentacion, categoria, costo_ingresado, costo_usd_ingresado, grupo_ingresado, stock_ingresado, p_uni_pen, p_uni_usd, p_six_pen, p_six_usd, p_caja_pen, p_caja_usd, p_plan_pen, p_plan_usd)
-                    )
+                    cursor.execute("""
+                        INSERT INTO productos (nombre, presentacion, categoria, grupo_surtido, stock, 
+                        costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd, costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd, costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd,
+                        precio_uni_pen, precio_uni_usd, precio_pack4_pen, precio_pack4_usd, precio_six_pen, precio_six_usd, precio_caja_pen, precio_caja_usd, precio_pack15_pen, precio_pack15_usd, precio_plancha_pen, precio_plancha_usd) 
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (nombre, presentacion, categoria, grupo_ingresado, stock_ingresado,
+                          float(c_u_pen.value), float(c_u_usd.value), float(c_p4_pen.value), float(c_p4_usd.value), float(c_s_pen.value), float(c_s_usd.value), float(c_c_pen.value), float(c_c_usd.value), float(c_p15_pen.value), float(c_p15_usd.value), float(c_pl_pen.value), float(c_pl_usd.value),
+                          float(p_u_pen.value), float(p_u_usd.value), float(p_p4_pen.value), float(p_p4_usd.value), float(p_s_pen.value), float(p_s_usd.value), float(p_c_pen.value), float(p_c_usd.value), float(p_p15_pen.value), float(p_p15_usd.value), float(p_pl_pen.value), float(p_pl_usd.value)))
                     mensaje = "Producto registrado correctamente."
 
             page.close(dialogo_producto) 
@@ -1224,7 +1306,7 @@ def main(page: ft.Page):
             page.open(dialogo_exito)
             cargar_datos_inventario() 
             
-        except Exception as ex:
+        except Exception as ex: 
             page.open(ft.SnackBar(ft.Text(f"Error BD: {ex}"), bgcolor=ft.colors.RED))
             
         boton.text = "Guardar"; boton.disabled = False; page.update()
@@ -1232,54 +1314,74 @@ def main(page: ft.Page):
     dialogo_producto = ft.AlertDialog(
         title=ft.Text("Registrar Nuevo Producto", weight=ft.FontWeight.BOLD),
         content=ft.Container(
-            width=650, 
+            width=850, 
             content=ft.Column([
-                ft.Container(height=10),
                 ft.ResponsiveRow([input_nombre_prod, input_presentacion_prod]),
-                ft.ResponsiveRow([dropdown_categoria, input_grupo_prod, input_stock_prod, input_costo_prod, input_costo_usd_prod]),
-                    ft.Divider(),
-                    ft.Text("Precios por Unidad", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([input_precio_uni_pen, input_precio_uni_usd]),
-                    ft.Text("Precios por Six-pack", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([input_precio_six_pen, input_precio_six_usd]),
-                    ft.Text("Precios por Caja", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([input_precio_caja_pen, input_precio_caja_usd]),
-                    ft.Text("Precios por Plancha", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREY_700),
-                    ft.ResponsiveRow([input_precio_plancha_pen, input_precio_plancha_usd]),
-                ],
-                scroll=ft.ScrollMode.AUTO, 
-                tight=True
-            )
+                ft.ResponsiveRow([dropdown_categoria, input_grupo_prod, input_stock_prod]),
+                ft.Divider(),
+                ft.Text("COSTOS DE COMPRA", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.RED_700),
+                ft.ResponsiveRow([c_u_pen, c_u_usd, c_p4_pen, c_p4_usd, c_s_pen, c_s_usd]),
+                ft.ResponsiveRow([c_c_pen, c_c_usd, c_p15_pen, c_p15_usd, c_pl_pen, c_pl_usd]),
+                ft.Divider(),
+                ft.Text("PRECIOS DE VENTA", weight=ft.FontWeight.BOLD, size=12, color=ft.colors.GREEN_700),
+                ft.ResponsiveRow([p_u_pen, p_u_usd, p_p4_pen, p_p4_usd, p_s_pen, p_s_usd]),
+                ft.ResponsiveRow([p_c_pen, p_c_usd, p_p15_pen, p_p15_usd, p_pl_pen, p_pl_usd]),
+            ], scroll=ft.ScrollMode.AUTO, tight=True)
         ),
-        actions=[
-            ft.TextButton("Cancelar", on_click=cerrar_dialogo),
-            ft.ElevatedButton("Guardar", bgcolor=ft.colors.GREEN, color=ft.colors.WHITE, on_click=guardar_producto_bd)
-        ]
+        actions=[ft.TextButton("Cancelar", on_click=cerrar_dialogo), ft.ElevatedButton("Guardar", bgcolor=ft.colors.GREEN, color=ft.colors.WHITE, on_click=guardar_producto_bd)]
     )
 
     def abrir_dialogo_nuevo(e):
         if tiene_permiso():
-            input_nombre_prod.value = ""
-            input_presentacion_prod.value = ""
-            input_grupo_prod.value = ""
+            # Resetear todo al abrir
+            for f in [input_nombre_prod, input_presentacion_prod, input_grupo_prod]: f.value = ""
             dropdown_categoria.value = None
-            input_costo_prod.value = "0.00"
-            input_costo_usd_prod.value = "0.00"
             input_stock_prod.value = "0"
-            input_precio_uni_pen.value = "0.00"
-            input_precio_uni_usd.value = "0.00"
-            input_precio_six_pen.value = "0.00"
-            input_precio_six_usd.value = "0.00"
-            input_precio_caja_pen.value = "0.00"
-            input_precio_caja_usd.value = "0.00"
-            input_precio_plancha_pen.value = "0.00"
-            input_precio_plancha_usd.value = "0.00"
+            for f in [c_u_pen, c_u_usd, c_p4_pen, c_p4_usd, c_s_pen, c_s_usd, c_c_pen, c_c_usd, c_p15_pen, c_p15_usd, c_pl_pen, c_pl_usd]: f.value = "0.00"
+            for f in [p_u_pen, p_u_usd, p_p4_pen, p_p4_usd, p_s_pen, p_s_usd, p_c_pen, p_c_usd, p_p15_pen, p_p15_usd, p_pl_pen, p_pl_usd]: f.value = "0.00"
             page.open(dialogo_producto)
 
     opciones_filtro = ["TODAS", "WHISKY", "WHISKEY", "RON", "PISCO", "VINO", "LICOR", "TEQUILA", "CREMA", "GIN", "VODKA", "VERMOUTH", "BRANDY", "COGNAC", "ESPUMANTE", "CHAMPAGNE", "MEZCAL", "CERVEZA", "RTD", "AGUA", "GASEOSA", "ENERGIZANTE", "AGUA TÓNICA", "GINGER ALE", "JUGO"]
     
     filtro_cat_inv = ft.Dropdown(options=[ft.dropdown.Option(c) for c in opciones_filtro], value="TODAS", label="Filtrar Categoría", col={"sm": 12, "md": 4}, on_change=lambda _: cargar_datos_inventario())
-    filtro_nom_inv = ft.TextField(label="Buscar producto por nombre...", prefix_icon=ft.icons.SEARCH, col={"sm": 12, "md": 8}, on_change=lambda _: cargar_datos_inventario())
+    lista_resultados_inv = ft.ListView(spacing=2, padding=5, visible=False, height=150)
+
+    def seleccionar_auto_inv(nombre):
+        filtro_nom_inv.value = nombre
+        lista_resultados_inv.visible = False
+        cargar_datos_inventario()
+        page.update()
+
+    def buscar_dinamico_inv(e):
+        busqueda = filtro_nom_inv.value.strip()
+        if len(busqueda) < 2:
+            lista_resultados_inv.controls.clear()
+            lista_resultados_inv.visible = False
+            cargar_datos_inventario()
+            return
+        try:
+            with obtener_cursor() as cursor:
+                cursor.execute("SELECT DISTINCT nombre FROM productos WHERE nombre LIKE %s LIMIT 20", (f"%{busqueda}%",))
+                resultados = cursor.fetchall()
+            if filtro_nom_inv.value.strip() != busqueda: return
+            
+            lista_resultados_inv.controls.clear()
+            if resultados:
+                lista_resultados_inv.visible = True
+                for fila in resultados:
+                    n = str(fila[0]).strip()
+                    lista_resultados_inv.controls.append(ft.ListTile(title=ft.Text(n, size=13), on_click=lambda e, nom=n: seleccionar_auto_inv(nom)))
+            else:
+                lista_resultados_inv.visible = False
+            cargar_datos_inventario()
+            page.update()
+        except: pass
+
+    filtro_nom_inv = ft.TextField(
+        label="Buscar producto por nombre...", prefix_icon=ft.icons.SEARCH, 
+        col={"sm": 12, "md": 8}, on_change=buscar_dinamico_inv,
+        suffix=ft.IconButton(ft.icons.CLEAR, on_click=lambda e: [setattr(filtro_nom_inv, 'value', ''), buscar_dinamico_inv(e)])
+    )
     alerta_no_encontrado = ft.Text("❌ Producto no encontrado.", color=ft.colors.RED, visible=False, weight=ft.FontWeight.BOLD)
 
     id_producto_ingreso = [None]
@@ -1408,6 +1510,7 @@ def main(page: ft.Page):
                 ])
             ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             ft.ResponsiveRow([filtro_cat_inv, filtro_nom_inv]),
+            lista_resultados_inv,
             alerta_no_encontrado,
             ft.Divider(),
             ft.Column([tabla_inventario])
@@ -1420,9 +1523,11 @@ def main(page: ft.Page):
         columns=[
             ft.DataColumn(ft.Text("Ticket", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Fecha y Hora", weight=ft.FontWeight.BOLD)),
-            ft.DataColumn(ft.Text("Cliente", weight=ft.FontWeight.BOLD)),
+            ft.DataColumn(ft.Text("Cliente/Estado", weight=ft.FontWeight.BOLD)),
             ft.DataColumn(ft.Text("Total (S/)", weight=ft.FontWeight.BOLD)),
+            ft.DataColumn(ft.Text("Util (S/)", weight=ft.FontWeight.BOLD, color=ft.colors.GREEN_700)),
             ft.DataColumn(ft.Text("Total ($)", weight=ft.FontWeight.BOLD)),
+            ft.DataColumn(ft.Text("Util ($)", weight=ft.FontWeight.BOLD, color=ft.colors.GREEN_700)),
             ft.DataColumn(ft.Text("Acciones", weight=ft.FontWeight.BOLD)),
         ],
         rows=[]
@@ -1528,7 +1633,8 @@ def main(page: ft.Page):
             pdf.set_font("Arial", 'B', 6) 
             pdf.cell(6, 4, txt="Cant", align='C')
             pdf.cell(8, 4, txt="Unid", align='C')
-            pdf.cell(26, 4, txt="Descripción", align='C')
+            # La cabecera Descripción pegada a la izquierda (align='L')
+            pdf.cell(26, 4, txt="Descripción", align='L') 
             pdf.cell(10, 4, txt="P.U.", align='C')
             pdf.cell(10, 4, txt="Sub S/", align='C')
             pdf.cell(10, 4, txt="Sub $", ln=True, align='C')
@@ -1539,21 +1645,24 @@ def main(page: ft.Page):
             
             pdf.set_font("Arial", size=5)
             for det in detalles:
-                lineas_desc = textwrap.wrap(str(det[0]), width=22)
-                if not lineas_desc: lineas_desc = [""]
-
+                lineas = textwrap.wrap(str(det[0]), width=22)
+                
+                # Primera línea del producto
                 pdf.cell(6, 3, txt=str(det[1]), align='C')
                 pdf.cell(8, 3, txt=str(det[2][:3]).upper(), align='C') 
-                pdf.cell(26, 3, txt=lineas_desc[0], align='L')
+                # El texto pegado a la izquierda
+                pdf.cell(26, 3, txt=lineas[0] if lineas else "", align='L') 
                 pdf.cell(10, 3, txt=f"{det[3]:.2f}", align='C')
                 pdf.cell(10, 3, txt=f"{det[4]:.2f}", align='R')
                 pdf.cell(10, 3, txt=f"{det[5]:.2f}", ln=True, align='R')
                 
-                for linea_extra in lineas_desc[1:]:
-                    pdf.cell(14, 3, txt="", align='C') 
-                    pdf.cell(26, 3, txt=linea_extra, align='L')
-                    pdf.cell(30, 3, txt="", ln=True, align='R') 
+                # Bucle para imprimir las líneas extra hacia abajo sin romper la tabla
+                for linea_extra in lineas[1:]:
+                    pdf.cell(14, 3, txt="", align='C') # Espacio en blanco debajo de Cant y Unid
+                    pdf.cell(26, 3, txt=linea_extra, align='L') # Texto pegado a la izquierda
+                    pdf.cell(30, 3, txt="", ln=True, align='R') # Espacio en blanco debajo de los precios
                 
+                # Cerramos el cuadrito de la fila
                 y_actual = pdf.get_y()
                 pdf.set_draw_color(200, 200, 200)
                 pdf.line(5, y_actual, 75, y_actual)
@@ -1676,14 +1785,49 @@ def main(page: ft.Page):
     
         page.open(dialogo_anular)
 
+    lista_resultados_reporte = ft.ListView(spacing=2, padding=5, visible=False, height=150)
+
+    def seleccionar_auto_reporte(nombre):
+        input_buscar_reporte.value = nombre
+        lista_resultados_reporte.visible = False
+        cargar_ventas_diarias()
+        page.update()
+
+    def buscar_dinamico_reporte(e):
+        busqueda = input_buscar_reporte.value.strip()
+        if len(busqueda) < 2:
+            lista_resultados_reporte.controls.clear()
+            lista_resultados_reporte.visible = False
+            cargar_ventas_diarias()
+            return
+        try:
+            with obtener_cursor() as cursor:
+                cursor.execute("SELECT DISTINCT nombre FROM productos WHERE nombre LIKE %s LIMIT 20", (f"%{busqueda}%",))
+                resultados = cursor.fetchall()
+            if input_buscar_reporte.value.strip() != busqueda: return
+            
+            lista_resultados_reporte.controls.clear()
+            if resultados:
+                lista_resultados_reporte.visible = True
+                for fila in resultados:
+                    n = str(fila[0]).strip()
+                    lista_resultados_reporte.controls.append(ft.ListTile(title=ft.Text(n, size=13), on_click=lambda e, nom=n: seleccionar_auto_reporte(nom)))
+            else:
+                lista_resultados_reporte.visible = False
+            page.update()
+        except: pass
+
     def limpiar_busqueda_reporte(e):
         input_buscar_reporte.value = ""
+        lista_resultados_reporte.controls.clear()
+        lista_resultados_reporte.visible = False
         cargar_ventas_diarias()
         page.update()
 
     input_buscar_reporte = ft.TextField(
         label="Buscar producto en el historial de ventas...", prefix_icon=ft.icons.SEARCH,
         suffix=ft.IconButton(ft.icons.CLEAR, on_click=limpiar_busqueda_reporte),
+        on_change=buscar_dinamico_reporte,
         on_submit=lambda _: cargar_ventas_diarias(),
         col={"sm": 12, "md": 8}
     )
@@ -1708,8 +1852,7 @@ def main(page: ft.Page):
             fecha_hoy = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=-5))).date()
             busqueda_prod = input_buscar_reporte.value.strip()
 
-            # 2. Modificamos la consulta SQL para que detecte si se busca un producto
-            query = "SELECT DISTINCT v.id_venta, v.codigo_ticket, v.fecha_emision, v.hora_emision, v.cliente_nombre, v.total_pen, v.total_usd, v.estado FROM ventas v"
+            query = "SELECT DISTINCT v.id_venta, v.codigo_ticket, v.fecha_emision, v.hora_emision, v.cliente_nombre, v.total_pen, v.utilidad_pen, v.total_usd, v.utilidad_usd, v.estado, v.condicion_pago FROM ventas v"
             
             if busqueda_prod:
                 query += " JOIN detalles_venta d ON v.id_venta = d.id_venta JOIN productos p ON d.id_producto = p.id_producto"
@@ -1720,12 +1863,8 @@ def main(page: ft.Page):
             if rango == "Hoy":
                 query += " AND v.fecha_emision = %s"
                 params.append(fecha_hoy)
-            elif rango == "Últimos 7 días":
-                query += " AND v.fecha_emision >= %s"
-                params.append(fecha_hoy - datetime.timedelta(days=7))
-            elif rango == "Últimos 30 días":
-                query += " AND v.fecha_emision >= %s"
-                params.append(fecha_hoy - datetime.timedelta(days=30))
+            elif rango == "Todo el historial":
+                pass
             elif rango == "Personalizado" and input_fecha_inicio.value and input_fecha_fin.value:
                 query += " AND v.fecha_emision BETWEEN %s AND %s"
                 params.extend([input_fecha_inicio.value, input_fecha_fin.value])
@@ -1741,10 +1880,10 @@ def main(page: ft.Page):
                 filas = cursor.fetchall()
 
             for fila in filas:
-                id_v, cod, fecha, hora, cliente, t_pen, t_usd, estado = fila 
+                id_v, cod, fecha, hora, cliente, t_pen, u_pen, t_usd, u_usd, estado, cond_pago = fila 
                 es_anulada = (estado == "Anulada")
                 color_texto = ft.colors.RED if es_anulada else ft.colors.BLACK
-                texto_cliente = f"{cliente} (ANULADO)" if es_anulada else (cliente if cliente else "VARIOS")
+                texto_cliente = f"{cliente} (ANULADO)" if es_anulada else f"{cliente if cliente else 'VARIOS'} - {cond_pago}"
                 fecha_hora_str = f"{fecha}  {hora}" 
 
                 btn_ver = ft.IconButton(ft.icons.VISIBILITY, icon_color=ft.colors.BLUE, tooltip="Ver Ticket", data=(id_v, cod), on_click=clic_ver)
@@ -1759,7 +1898,9 @@ def main(page: ft.Page):
                     ft.DataCell(ft.Text(fecha_hora_str, color=color_texto)),
                     ft.DataCell(ft.Text(texto_cliente, color=color_texto, weight=ft.FontWeight.BOLD if es_anulada else ft.FontWeight.NORMAL)),
                     ft.DataCell(ft.Text(f"{t_pen:.2f}", color=color_texto)),
+                    ft.DataCell(ft.Text(f"{u_pen:.2f}", color=ft.colors.GREEN_700, weight=ft.FontWeight.BOLD)),
                     ft.DataCell(ft.Text(f"{t_usd:.2f}", color=color_texto)),
+                    ft.DataCell(ft.Text(f"{u_usd:.2f}", color=ft.colors.GREEN_700, weight=ft.FontWeight.BOLD)),
                     ft.DataCell(acciones)
                 ]))
                 
@@ -1953,6 +2094,7 @@ def main(page: ft.Page):
         content=ft.Column([
             ft.ResponsiveRow([filtro_rango_rep, input_fecha_inicio, btn_cal_inicio, input_fecha_fin, btn_cal_fin, btn_aplicar_fechas], vertical_alignment=ft.CrossAxisAlignment.CENTER), 
             ft.ResponsiveRow([input_buscar_reporte, ft.ElevatedButton("Cuadrar Caja (Rango Actual)", icon=ft.icons.CALCULATE, bgcolor="#F39C12", color=ft.colors.WHITE, on_click=cuadrar_caja_diaria, col={"sm": 12, "md": 4})], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            lista_resultados_reporte,
             contenedor_grafico, 
             ft.Column([tabla_ventas_diarias]) 
         ])
