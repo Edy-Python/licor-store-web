@@ -1,9 +1,18 @@
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "America/Lima")
+
 DB_CONFIG = {
-    "host": "autorack.proxy.rlwy.net",
-    "user": "root", 
-    "password": "LWSwvsNlJSgYvSIHUakxautShyLgNJie", 
-    "database": "railway", 
-    "port": 15565
+    "host": os.getenv("DB_HOST", "autorack.proxy.rlwy.net"),
+    "user": os.getenv("DB_USER", "root"), 
+    "password": os.getenv("DB_PASSWORD", "LWSwvsNlJSgYvSIHUakxautShyLgNJie"), 
+    "database": os.getenv("DB_NAME", "railway"), 
+    "port": int(os.getenv("DB_PORT", 15565))
 }
 
 USUARIOS = {

@@ -4,3 +4,4 @@ pandas
 openpyxl==3.1.2
 fpdf2==2.7.9
 num2words==0.5.13
+python-dotenv==1.0.1
