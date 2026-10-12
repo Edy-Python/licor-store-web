@@ -402,9 +402,9 @@ class PosView(ft.Container):
                 cursor.execute("""
                     SELECT id_producto, nombre, presentacion, stock, precio_uni_pen 
                     FROM productos 
-                    WHERE nombre LIKE %s OR id_producto = %s OR codigo_barras = %s
-                    ORDER BY (stock > 0) DESC, nombre ASC LIMIT 30
-                """, (f"%{busqueda}%", busqueda if busqueda.isdigit() else -1, busqueda))
+                    WHERE nombre LIKE %s OR id_producto = %s OR codigo_barras = %s OR codigo_producto LIKE %s
+                    ORDER BY (stock > 0) DESC, orden ASC, nombre ASC LIMIT 30
+                """, (f"%{busqueda}%", busqueda if busqueda.isdigit() else -1, busqueda, f"%{busqueda}%"))
                 resultados = cursor.fetchall()  
             if self.input_buscar.value.strip() != busqueda:
                 return
@@ -920,12 +920,25 @@ class PosView(ft.Container):
             # ── 3. Datos complementarios (sin BD) ────────────────────────────────
             dt_operacion = ahora_local()
 
+            vendedor_actual = ""
             if hasattr(self.page, 'nombre_usuario') and self.page.nombre_usuario:
+                nombre_limpio = str(self.page.nombre_usuario).strip()
+                if nombre_limpio.upper() not in ("", "USUARIO", "ADMIN"):
+                    vendedor_actual = nombre_limpio.upper()
+
+            if not vendedor_actual and hasattr(self.page, 'id_usuario') and self.page.id_usuario:
+                try:
+                    with obtener_cursor() as cur_usr:
+                        cur_usr.execute("SELECT nombre FROM usuarios WHERE id = %s", (self.page.id_usuario,))
+                        fila_usr = cur_usr.fetchone()
+                        if fila_usr and fila_usr[0]:
+                            vendedor_actual = str(fila_usr[0]).strip().upper()
+                            self.page.nombre_usuario = fila_usr[0].strip()
+                except Exception:
+                    pass
+
+            if not vendedor_actual and hasattr(self.page, 'nombre_usuario') and self.page.nombre_usuario:
                 vendedor_actual = str(self.page.nombre_usuario).strip().upper()
-            elif hasattr(self.page, 'rol_usuario') and self.page.rol_usuario:
-                vendedor_actual = str(self.page.rol_usuario).strip().upper()
-            else:
-                vendedor_actual = "ADMIN"
 
             obs = self.input_observacion.value.strip() if self.input_observacion.value else ""
             t_usd_final = t_usd if t_usd > 0 else dl

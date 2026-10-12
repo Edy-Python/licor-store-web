@@ -31,14 +31,14 @@ def _obtener_config_empresa():
         "referencia": ""
     }
 
-def _dibujar_cabecera_pdf(pdf: FPDF, conf: dict, logo_x: float = 12, logo_w: float = 56, espacio_post: float = 3):
+def _dibujar_cabecera_pdf(pdf: FPDF, conf: dict, logo_x: float = 7, logo_w: float = 66, espacio_post: float = 3):
     """Dibuja de forma estandarizada el logo y la cabecera comercial de la empresa."""
     logo_path = os.path.join(os.getcwd(), "LogoLK.png")
     if not os.path.exists(logo_path):
         logo_path = os.path.join(os.getcwd(), "assets", "LogoLK.png")
     if os.path.exists(logo_path):
         pdf.image(logo_path, x=logo_x, y=5, w=logo_w)
-        pdf.ln(18)
+        pdf.ln(21)
 
     nom = conf.get("nombre", "").strip()
     if nom:
@@ -52,13 +52,13 @@ def _dibujar_cabecera_pdf(pdf: FPDF, conf: dict, logo_x: float = 12, logo_w: flo
 
     dir_emp = conf.get("direccion", "").strip()
     if dir_emp:
-        for linea_dir in textwrap.wrap(dir_emp, width=32):
+        for linea_dir in textwrap.wrap(dir_emp, width=55):
             pdf.cell(70, 4, txt=linea_dir, ln=True, align='C')
 
     ref_emp = conf.get("referencia", "").strip()
     if ref_emp:
         texto_ref = ref_emp if ref_emp.lower().startswith("ref") else f"Ref: {ref_emp}"
-        for linea_ref in textwrap.wrap(texto_ref, width=32):
+        for linea_ref in textwrap.wrap(texto_ref, width=55):
             pdf.cell(70, 4, txt=linea_ref, ln=True, align='C')
 
     tel = conf.get("telefono", "").strip()
@@ -118,24 +118,27 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         f_emision, h_emision, vendedor, c_nombre, c_dni, c_dir, t_pen, t_usd, m_pago, m_efec, m_yape, m_transf, m_tarj, vuelto, *resto = cabecera
         cond_pago = resto[0] if resto and resto[0] else "Contado"
 
-        lineas_totales_productos = sum(max(1, len(textwrap.wrap(str(d[0]), width=16))) for d in detalles)
-        alto_total = 160 + (lineas_totales_productos * 5) 
+        lineas_totales_productos = sum(max(1, len(textwrap.wrap(str(d[0]), width=18))) for d in detalles)
+        alto_total = 165 + (len(detalles) * 3) + (lineas_totales_productos * 5) 
 
         pdf = FPDF(orientation='P', unit='mm', format=(80, alto_total)) 
         pdf.set_margins(5, 5, 5) 
         pdf.set_auto_page_break(auto=False, margin=0) 
         pdf.add_page()
         
-        _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=12, logo_w=56, espacio_post=3)
+        # Requisito 1: Logo centrado más grande (w=66, x=7)
+        _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=3)
 
-        pdf.set_font("Arial", 'B', 10.5)
-        pdf.cell(70, 5, txt="Nota de Venta", ln=True, align='C')
-        pdf.set_font("Arial", 'B', 9.5)
-        pdf.cell(70, 5, txt=codigo_ticket, ln=True, align='C')
+        # Requisito 2: Número de ticket resaltado drásticamente (13pt negrita)
+        pdf.set_font("Arial", 'B', 8.5)
+        pdf.cell(70, 4, txt="Nota de Venta", ln=True, align='C')
+        pdf.set_font("Arial", 'B', 13)
+        pdf.cell(70, 6, txt=codigo_ticket, ln=True, align='C')
         pdf.ln(3)
         
+        # Requisito 2: Estandarización de fuente a 8pt
         def dibujar_fila_cliente(etiqueta, valor):
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("Arial", size=8)
             pdf.cell(18, 4.2, txt=etiqueta, align='L')
             pdf.set_font("Arial", size=8)
             pdf.cell(52, 4.2, txt=str(valor), ln=True, align='L')
@@ -144,49 +147,71 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         dibujar_fila_cliente("H. Emisión:", h_emision)
         dibujar_fila_cliente("Cliente:", c_nombre if c_nombre else 'VARIOS')
         dibujar_fila_cliente("DNI:", c_dni if c_dni else '00000000')
-        dibujar_fila_cliente("Dirección:", c_dir[:30] if c_dir else 'Tacna')
+        dibujar_fila_cliente("Dirección:", c_dir[:40] if c_dir else 'Tacna')
         pdf.ln(3)
         
-        pdf.set_font("Arial", 'B', 6.5) 
-        pdf.cell(7, 4, txt="Cant", align='C')
-        pdf.cell(8, 4, txt="Unid", align='C')
-        pdf.cell(25, 4, txt="Descripción", align='L') 
-        pdf.cell(10, 4, txt="P.U.", align='C')
-        pdf.cell(10, 4, txt="Sub S/", align='C')
-        pdf.cell(10, 4, txt="Sub $", ln=True, align='C')
-        
-        y_actual = pdf.get_y()
-        pdf.set_draw_color(0, 0, 0)
-        pdf.line(5, y_actual, 75, y_actual)
-        pdf.ln(1)
-        
+        # 1. Punto de inicio total de la tabla (Cabecera + Cuerpo)
+        y_inicio_tabla = pdf.get_y()
+        alto_celda = 4
+
+        # 2. Imprimir Encabezados con border=0
+        pdf.set_font("Arial", 'B', 7.5)
+        pdf.set_xy(5, y_inicio_tabla)
+        pdf.cell(7, alto_celda, txt="Cant", border=0, align='C')
+        pdf.cell(8, alto_celda, txt="Unid", border=0, align='C')
+        pdf.cell(25, alto_celda, txt="Descripción", border=0, align='C')
+        pdf.cell(10, alto_celda, txt="P.U.", border=0, align='C')
+        pdf.cell(10, alto_celda, txt="Sub S/", border=0, align='C')
+        pdf.cell(10, alto_celda, txt="Sub $", border=0, ln=True, align='C')
+
+        # 3. Imprimir Productos con border=0 (sin dibujar rectángulos ni líneas internas)
         for det in detalles:
-            lineas = textwrap.wrap(str(det[0]), width=16)
-            
-            pdf.set_font("Arial", size=6)
-            pdf.cell(7, 3.5, txt=str(det[1]), align='C')
-            pdf.cell(8, 3.5, txt=str(det[2][:3]).upper(), align='C') 
-            pdf.set_font("Arial", 'B', 6)
-            pdf.cell(25, 3.5, txt=lineas[0] if lineas else "", align='L') 
-            pdf.set_font("Arial", size=6)
-            pdf.cell(10, 3.5, txt=f"{det[3]:.2f}", align='C')
-            pdf.cell(10, 3.5, txt=f"{det[4]:.2f}", align='R')
-            pdf.cell(10, 3.5, txt=f"{det[5]:.2f}", ln=True, align='R')
-            
-            pdf.set_font("Arial", 'B', 6)
-            for linea_extra in lineas[1:]:
-                pdf.cell(15, 3.2, txt="", align='C')
-                pdf.cell(25, 3.2, txt=linea_extra, align='L')
-                pdf.cell(30, 3.2, txt="", ln=True, align='R')
-            
-            y_actual = pdf.get_y()
-            pdf.set_draw_color(0, 0, 0)
-            pdf.line(5, y_actual, 75, y_actual)
-            pdf.ln(1)
-            
-        pdf.ln(3)
+            lineas = textwrap.wrap(str(det[0]), width=16) or [""]
+            alto_fila = len(lineas) * alto_celda
+            y_fila = pdf.get_y()
+
+            pdf.set_font("Arial", '', 7)
+
+            pdf.set_xy(5, y_fila)
+            pdf.cell(7, alto_celda, txt=str(det[1]), border=0, align='C')
+
+            pdf.set_xy(12, y_fila)
+            pdf.cell(8, alto_celda, txt=str(det[2][:3]).upper(), border=0, align='C')
+
+            pdf.set_xy(45, y_fila)
+            pdf.cell(10, alto_celda, txt=f"{det[3]:.2f}", border=0, align='C')
+
+            pdf.set_xy(55, y_fila)
+            pdf.cell(10, alto_celda, txt=f"{det[4]:.2f}", border=0, align='R')
+
+            pdf.set_xy(65, y_fila)
+            pdf.cell(10, alto_celda, txt=f"{det[5]:.2f}", border=0, align='R')
+
+            for i, linea in enumerate(lineas):
+                pdf.set_xy(20, y_fila + (i * alto_celda))
+                pdf.cell(25, alto_celda, txt=linea, border=0, align='L')
+
+            # Bajar el cursor al final de la fila actual
+            pdf.set_y(y_fila + alto_fila)
+
+        # 4. Punto de fin total de la tabla
+        y_fin_tabla = pdf.get_y()
+
+        # 5. Dibujar la Cuadrícula Maestra Unificada
+        pdf.set_draw_color(0, 0, 0)
+        pdf.rect(5, y_inicio_tabla, 70, y_fin_tabla - y_inicio_tabla)
+        pdf.line(5, y_inicio_tabla + 4, 75, y_inicio_tabla + 4)
+
+        pdf.line(12, y_inicio_tabla, 12, y_fin_tabla)
+        pdf.line(20, y_inicio_tabla, 20, y_fin_tabla)
+        pdf.line(45, y_inicio_tabla, 45, y_fin_tabla)
+        pdf.line(55, y_inicio_tabla, 55, y_fin_tabla)
+        pdf.line(65, y_inicio_tabla, 65, y_fin_tabla)
+
+        pdf.ln(2)
         
-        pdf.set_font("Arial", 'B', 9)
+        # Totales
+        pdf.set_font("Arial", 'B', 8)
         if t_pen > 0:
             pdf.cell(35, 5, txt="", align='L')
             pdf.cell(23, 5, txt="Total a pagar: S/", align='R')
@@ -218,6 +243,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         
         pdf.ln(2)
         
+        # Datos de pago y cierre estandarizados a 8pt
         pdf.set_font("Arial", 'B', 8)
         pdf.write(4.5, "Condición de Pago: ")
         pdf.set_font("Arial", size=8)
@@ -300,7 +326,7 @@ def exportar_recibo_abono_pdf(page: ft.Page, id_pago):
         pdf.set_auto_page_break(auto=False, margin=0)
         pdf.add_page()
 
-        _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=15, logo_w=50, espacio_post=2)
+        _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=2)
 
         pdf.set_font("Arial", 'B', 10.5)
         pdf.cell(70, 5, txt="RECIBO DE ABONO / COBRANZA", ln=True, align='C')
@@ -420,7 +446,7 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
         pdf.set_auto_page_break(auto=False, margin=0)
         pdf.add_page()
 
-        _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=15, logo_w=50, espacio_post=2)
+        _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=2)
 
         pdf.set_font("Arial", 'B', 10.5)
         pdf.cell(70, 5, txt="CIERRE Y ARQUEO DE CAJA", ln=True, align='C')
@@ -514,4 +540,3 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
     except Exception as ex:
         print(f"Error generando ticket cierre: {ex}")
         page.open(ft.SnackBar(ft.Text(f"❌ Error al generar ticket cierre: {ex}"), bgcolor=ft.colors.RED))
-

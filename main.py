@@ -367,8 +367,21 @@ def main(page: ft.Page):
     
     if rol_guardado:
         page.rol_usuario = rol_guardado
-        page.nombre_usuario = nombre_guardado or "USUARIO"
         page.id_usuario = id_guardado
+
+        if not nombre_guardado or str(nombre_guardado).strip().upper() in ("", "USUARIO", "ADMIN"):
+            if id_guardado:
+                try:
+                    with obtener_cursor() as cursor:
+                        cursor.execute("SELECT nombre FROM usuarios WHERE id = %s", (id_guardado,))
+                        fila_usuario = cursor.fetchone()
+                        if fila_usuario and fila_usuario[0]:
+                            nombre_guardado = fila_usuario[0].strip()
+                            page.client_storage.set("nombre_usuario", nombre_guardado)
+                except Exception:
+                    pass
+
+        page.nombre_usuario = nombre_guardado or ""
         vista_login.visible = False
         vista_dashboard.visible = True
         aplicar_permisos_usuario()

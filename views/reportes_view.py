@@ -21,7 +21,7 @@ class ReportesView(ft.Container):
         self.bgcolor = ft.colors.WHITE
         self.border_radius = 16
         self.shadow = ft.BoxShadow(
-            spread_radius=0,
+            spread_radius=0,    
             blur_radius=25,
             color=ft.colors.with_opacity(0.04, ft.colors.BLACK),
             offset=ft.Offset(0, 8)

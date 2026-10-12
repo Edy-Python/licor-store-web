@@ -113,6 +113,8 @@ def inicializar_tablas():
                     grupo_surtido VARCHAR(100) DEFAULT '',
                     stock INT NOT NULL DEFAULT 0,
                     codigo_barras VARCHAR(100) DEFAULT '',
+                    codigo_producto VARCHAR(100) DEFAULT '',
+                    orden INT NOT NULL DEFAULT 0,
                     costo_uni_pen DECIMAL(10,2) NOT NULL DEFAULT 0.00,
                     costo_uni_usd DECIMAL(10,2) NOT NULL DEFAULT 0.00,
                     costo_pack4_pen DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -140,11 +142,32 @@ def inicializar_tablas():
                     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_prod_nombre (nombre),
                     INDEX idx_prod_codigo (codigo_barras),
+                    INDEX idx_prod_sku (codigo_producto),
+                    INDEX idx_prod_orden (orden),
                     INDEX idx_prod_categoria (categoria)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
             try:
                 cursor.execute("ALTER TABLE productos ADD COLUMN codigo_barras VARCHAR(100) DEFAULT ''")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE productos ADD COLUMN codigo_producto VARCHAR(100) DEFAULT ''")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE productos ADD COLUMN orden INT DEFAULT 0")
+            except Exception:
+                pass
+            try:
+                cursor.execute("SELECT COUNT(*) FROM productos WHERE orden = 0")
+                if cursor.fetchone()[0] > 0:
+                    cursor.execute("SELECT COALESCE(MAX(orden), 0) FROM productos")
+                    max_ord = cursor.fetchone()[0]
+                    cursor.execute("SELECT id_producto FROM productos WHERE orden = 0 ORDER BY id_producto ASC")
+                    for (id_p,) in cursor.fetchall():
+                        max_ord += 1
+                        cursor.execute("UPDATE productos SET orden = %s WHERE id_producto = %s", (max_ord, id_p))
             except Exception:
                 pass
 

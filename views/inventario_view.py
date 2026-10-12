@@ -40,21 +40,22 @@ class InventarioView(ft.Container):
         try:
             cat = self.filtro_cat_inv.value
             nom = self.filtro_nom_inv.value.strip() if self.filtro_nom_inv.value else ""
-            query = "SELECT id_producto, nombre, presentacion, stock, costo_uni_pen, costo_uni_usd, precio_uni_pen, precio_caja_pen FROM productos WHERE 1=1"
+            query = "SELECT id_producto, nombre, presentacion, stock, costo_uni_pen, costo_uni_usd, precio_uni_pen, precio_caja_pen, COALESCE(codigo_producto, ''), COALESCE(orden, 0) FROM productos WHERE 1=1"
             params = []
             
             if cat == "SOLO STOCK BAJO (<= 10)": query += " AND stock <= 10"
             elif cat and cat != "TODAS": query += " AND categoria = %s"; params.append(cat)
-            if nom: query += " AND nombre LIKE %s"; params.append(f"%{nom}%")
-            if cat == "SOLO STOCK BAJO (<= 10)": query += " ORDER BY stock ASC, id_producto ASC"
-            else: query += " ORDER BY id_producto ASC"
+            if nom: 
+                query += " AND (nombre LIKE %s OR codigo_producto LIKE %s OR codigo_barras LIKE %s)"
+                params.extend([f"%{nom}%", f"%{nom}%", f"%{nom}%"])
+            if cat == "SOLO STOCK BAJO (<= 10)": query += " ORDER BY stock ASC, orden ASC, id_producto ASC"
+            else: query += " ORDER BY orden ASC, id_producto ASC"
 
             with obtener_cursor() as cursor:
                 cursor.execute(query, tuple(params))
                 filas = cursor.fetchall()
             
             self.alerta_no_encontrado.visible = (len(filas) == 0)
-            correlativo = 1
             for fila in filas:
                 stock_actual = int(fila[3])
                 id_real = fila[0]
@@ -63,6 +64,7 @@ class InventarioView(ft.Container):
                 costo_usd = float(fila[5]) if fila[5] else 0.00
                 p_uni = float(fila[6]) if fila[6] else 0.00
                 p_caja = float(fila[7]) if fila[7] else 0.00
+                ord_val = fila[9]
                 
                 if stock_actual <= 0: color_alerta, icono_alerta = ft.colors.RED, ft.icons.ERROR
                 elif stock_actual <= 30: color_alerta, icono_alerta = ft.colors.ORANGE_700, ft.icons.WARNING
@@ -75,15 +77,35 @@ class InventarioView(ft.Container):
                 btn_editar = ft.IconButton(ft.icons.EDIT, icon_color=ft.colors.BLUE, tooltip="Editar", on_click=lambda e, i=id_real: self.fn_solicitar_password(lambda: self.abrir_edicion(i)))
                 btn_borrar = ft.IconButton(ft.icons.DELETE, icon_color=ft.colors.RED, tooltip="Eliminar", on_click=lambda e, i=id_real, n=nombre_prod: self.fn_solicitar_password(lambda: self.confirmar_eliminacion(i, n)))
                 
+                def cambiar_orden(e, id_p=id_real):
+                    if not self.tiene_permiso(): return
+                    try:
+                        nuevo_ord = int(e.control.value.strip())
+                        if nuevo_ord > 0:
+                            self.reordenar_producto(id_p, nuevo_ord)
+                            self.cargar_datos_inventario()
+                            self.page.open(ft.SnackBar(ft.Text("✅ Posición actualizada"), bgcolor=ft.colors.GREEN))
+                    except ValueError:
+                        pass
+
+                input_posicion = ft.TextField(
+                    value=str(ord_val), 
+                    width=65, 
+                    text_size=13, 
+                    dense=True, 
+                    text_align=ft.TextAlign.CENTER, 
+                    content_padding=ft.padding.symmetric(horizontal=2, vertical=10),
+                    on_submit=cambiar_orden
+                )
+
                 self.tabla_inventario.rows.append(ft.DataRow(cells=[
-                    ft.DataCell(ft.Text(str(correlativo), color=color_alerta)), 
+                    ft.DataCell(input_posicion), 
                     ft.DataCell(ft.Text(nombre_prod, color=color_alerta, weight=ft.FontWeight.BOLD if stock_actual <= 0 else ft.FontWeight.NORMAL)), 
                     ft.DataCell(ft.Text(str(fila[2]), color=color_alerta)), ft.DataCell(celda_stock), 
                     ft.DataCell(ft.Text(f"{costo_pen:.2f}", color=ft.colors.RED_700, weight=ft.FontWeight.BOLD)), ft.DataCell(ft.Text(f"{costo_usd:.2f}", color=ft.colors.RED_700, weight=ft.FontWeight.BOLD)),
                     ft.DataCell(ft.Text(f"{p_uni:.2f}", color=color_alerta)), ft.DataCell(ft.Text(f"{p_caja:.2f}", color=color_alerta)),
                     ft.DataCell(ft.Row([btn_ver, btn_kardex, btn_editar, btn_borrar], spacing=0))
                 ]))
-                correlativo += 1
             self.page.update()
         except Exception as e:
             self.page.open(ft.SnackBar(ft.Text("Error cargando inventario.", color=ft.colors.WHITE), bgcolor=ft.colors.RED))
@@ -147,19 +169,57 @@ class InventarioView(ft.Container):
             self.page.open(dlg)
         except Exception as ex: print(ex)
 
+    def reordenar_producto(self, id_producto, nueva_posicion):
+        """Desplaza las posiciones de la columna orden de forma transaccional."""
+        if nueva_posicion < 1:
+            return
+        with obtener_cursor(commit=True) as cursor:
+            cursor.execute("SELECT orden FROM productos WHERE id_producto = %s", (id_producto,))
+            fila = cursor.fetchone()
+            if not fila:
+                return
+            pos_actual = fila[0]
+            if pos_actual == nueva_posicion:
+                return
+
+            if nueva_posicion < pos_actual:
+                # Mover hacia arriba (ej. 60 a 6): ítems entre [nueva_pos .. pos_actual-1] suman +1
+                cursor.execute("""
+                    UPDATE productos 
+                    SET orden = orden + 1 
+                    WHERE orden >= %s AND orden < %s AND id_producto != %s
+                """, (nueva_posicion, pos_actual, id_producto))
+            else:
+                # Mover hacia abajo (ej. 6 a 60): ítems entre [pos_actual+1 .. nueva_pos] restan -1
+                cursor.execute("""
+                    UPDATE productos 
+                    SET orden = orden - 1 
+                    WHERE orden > %s AND orden <= %s AND id_producto != %s
+                """, (pos_actual, nueva_posicion, id_producto))
+
+            cursor.execute("UPDATE productos SET orden = %s WHERE id_producto = %s", (nueva_posicion, id_producto))
+
     # --- EDICIÓN Y ELIMINACIÓN ---
     def abrir_edicion(self, id_prod):
         try:
             with obtener_cursor() as cursor:
-                cursor.execute("SELECT nombre, presentacion, categoria, grupo_surtido, costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd, costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd, costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd, precio_uni_pen, precio_uni_usd, precio_pack4_pen, precio_pack4_usd, precio_six_pen, precio_six_usd, precio_caja_pen, precio_caja_usd, precio_pack15_pen, precio_pack15_usd, precio_plancha_pen, precio_plancha_usd, COALESCE(codigo_barras, '') FROM productos WHERE id_producto = %s", (id_prod,))
+                cursor.execute("""
+                    SELECT nombre, presentacion, categoria, grupo_surtido, 
+                           costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd, costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd, costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd, 
+                           precio_uni_pen, precio_uni_usd, precio_pack4_pen, precio_pack4_usd, precio_six_pen, precio_six_usd, precio_caja_pen, precio_caja_usd, precio_pack15_pen, precio_pack15_usd, precio_plancha_pen, precio_plancha_usd, 
+                           COALESCE(codigo_barras, ''), COALESCE(codigo_producto, ''), COALESCE(orden, 0) 
+                    FROM productos WHERE id_producto = %s
+                """, (id_prod,))
                 datos = cursor.fetchone()
             if not datos: return
-            n, pres, cat, grupo, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, cb = datos
+            n, pres, cat, grupo, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, cb, sku, ord_val = datos
         except Exception: return
 
+        in_sku = ft.TextField(label="Código Producto (SKU)", value=sku, col={"sm": 12, "md": 4}, height=42, text_size=13, dense=True)
         in_cb = ft.TextField(label="Código de Barras", value=cb, col={"sm": 12, "md": 4}, height=42, text_size=13, dense=True)
-        in_n = ft.TextField(label="Nombre", value=n, col={"sm": 12, "md": 5}, height=42, text_size=13, dense=True)
-        in_p = ft.TextField(label="Presentación", value=pres, col={"sm": 12, "md": 3}, height=42, text_size=13, dense=True)
+        in_orden = ft.TextField(label="Posición (Orden)", value=str(ord_val), col={"sm": 12, "md": 4}, height=42, text_size=13, dense=True)
+        in_n = ft.TextField(label="Nombre", value=n, col={"sm": 12, "md": 6}, height=42, text_size=13, dense=True)
+        in_p = ft.TextField(label="Presentación", value=pres, col={"sm": 12, "md": 6}, height=42, text_size=13, dense=True)
         dr_c = ft.Dropdown(label="Categoría", options=[ft.dropdown.Option(c) for c in self.opciones_cat], value=cat if cat else "LICOR", col={"sm": 6, "md": 6}, height=42, text_size=13, dense=True)
         in_g = ft.TextField(label="Grupo Surtido", value=grupo if grupo else "", col={"sm": 6, "md": 6}, height=42, text_size=13, dense=True)
         
@@ -171,11 +231,18 @@ class InventarioView(ft.Container):
             try:
                 with obtener_cursor(commit=True) as cursor:
                     cursor.execute("""
-                        UPDATE productos SET nombre=%s, presentacion=%s, categoria=%s, grupo_surtido=%s, codigo_barras=%s,
+                        UPDATE productos SET nombre=%s, presentacion=%s, categoria=%s, grupo_surtido=%s, codigo_barras=%s, codigo_producto=%s,
                         costo_uni_pen=%s, costo_uni_usd=%s, costo_pack4_pen=%s, costo_pack4_usd=%s, costo_six_pen=%s, costo_six_usd=%s, costo_caja_pen=%s, costo_caja_usd=%s, costo_pack15_pen=%s, costo_pack15_usd=%s, costo_plancha_pen=%s, costo_plancha_usd=%s,
                         precio_uni_pen=%s, precio_uni_usd=%s, precio_pack4_pen=%s, precio_pack4_usd=%s, precio_six_pen=%s, precio_six_usd=%s, precio_caja_pen=%s, precio_caja_usd=%s, precio_pack15_pen=%s, precio_pack15_usd=%s, precio_plancha_pen=%s, precio_plancha_usd=%s
                         WHERE id_producto = %s
-                    """, (in_n.value, in_p.value, dr_c.value, in_g.value.upper(), in_cb.value) + tuple(float(x.value) for x in ic) + tuple(float(x.value) for x in ip) + (id_prod,))
+                    """, (in_n.value, in_p.value, dr_c.value, in_g.value.upper(), in_cb.value, in_sku.value.strip()) + tuple(float(x.value) for x in ic) + tuple(float(x.value) for x in ip) + (id_prod,))
+                
+                # Si el usuario modificó la posición numérica, ejecutar desplazamiento transaccional
+                if in_orden.value and in_orden.value.strip().isdigit():
+                    nuevo_ord = int(in_orden.value.strip())
+                    if nuevo_ord != ord_val:
+                        self.reordenar_producto(id_prod, nuevo_ord)
+
                 self.page.close(dlg)
                 self.cargar_datos_inventario()
                 self.page.open(ft.SnackBar(ft.Text("✅ Actualizado", color=ft.colors.WHITE), bgcolor=ft.colors.GREEN))
@@ -184,7 +251,10 @@ class InventarioView(ft.Container):
         dlg = ft.AlertDialog(
             title=ft.Text("Modificar Producto", weight=ft.FontWeight.BOLD),
             content=ft.Container(width=850, content=ft.Column([
-                ft.ResponsiveRow([in_cb, in_n, in_p]), ft.ResponsiveRow([dr_c, in_g]), ft.Divider(),
+                ft.ResponsiveRow([in_sku, in_cb, in_orden]),
+                ft.ResponsiveRow([in_n, in_p]), 
+                ft.ResponsiveRow([dr_c, in_g]), 
+                ft.Divider(),
                 ft.Text("COSTOS DE COMPRA", weight=ft.FontWeight.BOLD, color=ft.colors.RED_700), ft.ResponsiveRow(ic[:6]), ft.ResponsiveRow(ic[6:]), ft.Divider(),
                 ft.Text("PRECIOS DE VENTA", weight=ft.FontWeight.BOLD, color=ft.colors.GREEN_700), ft.ResponsiveRow(ip[:6]), ft.ResponsiveRow(ip[6:]),
             ], scroll=ft.ScrollMode.AUTO, tight=True)),
@@ -221,12 +291,14 @@ class InventarioView(ft.Container):
                 if existe:
                     cursor.execute("UPDATE productos SET stock = stock + %s WHERE id_producto = %s", (st, existe[0]))
                 else:
+                    cursor.execute("SELECT COALESCE(MAX(orden), 0) + 1 FROM productos")
+                    siguiente_orden = cursor.fetchone()[0]
                     cursor.execute("""
-                        INSERT INTO productos (nombre, presentacion, categoria, grupo_surtido, stock, codigo_barras,
+                        INSERT INTO productos (nombre, presentacion, categoria, grupo_surtido, stock, codigo_barras, orden,
                         costo_uni_pen, costo_uni_usd, costo_pack4_pen, costo_pack4_usd, costo_six_pen, costo_six_usd, costo_caja_pen, costo_caja_usd, costo_pack15_pen, costo_pack15_usd, costo_plancha_pen, costo_plancha_usd,
                         precio_uni_pen, precio_uni_usd, precio_pack4_pen, precio_pack4_usd, precio_six_pen, precio_six_usd, precio_caja_pen, precio_caja_usd, precio_pack15_pen, precio_pack15_usd, precio_plancha_pen, precio_plancha_usd) 
-                        VALUES (%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                    """, (self.input_nombre_prod.value, self.input_presentacion_prod.value, self.dropdown_categoria.value, self.input_grupo_prod.value.upper(), st, self.input_codigo_barras_prod.value) + tuple(float(x.value) for x in self.ic_n) + tuple(float(x.value) for x in self.ip_n))
+                        VALUES (%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """, (self.input_nombre_prod.value, self.input_presentacion_prod.value, self.dropdown_categoria.value, self.input_grupo_prod.value.upper(), st, self.input_codigo_barras_prod.value, siguiente_orden) + tuple(float(x.value) for x in self.ic_n) + tuple(float(x.value) for x in self.ip_n))
             self.page.close(self.dialogo_producto)
             self.cargar_datos_inventario()
             self.page.open(ft.SnackBar(ft.Text("✅ Producto guardado"), bgcolor=ft.colors.GREEN))
@@ -297,12 +369,14 @@ class InventarioView(ft.Container):
                             WHERE id_producto = %s
                         """, (st, cat, grupo, c_u_pen, c_u_usd, p_u_pen, p_u_usd, p_caja_pen, p_six_pen, p_plan_pen, existente[0]))
                     else:
+                        cursor.execute("SELECT COALESCE(MAX(orden), 0) + 1 FROM productos")
+                        siguiente_orden = cursor.fetchone()[0]
                         cursor.execute("""
-                            INSERT INTO productos (nombre, presentacion, categoria, grupo_surtido, stock, codigo_barras,
+                            INSERT INTO productos (nombre, presentacion, categoria, grupo_surtido, stock, codigo_barras, orden,
                                                    costo_uni_pen, costo_uni_usd, precio_uni_pen, precio_uni_usd,
                                                    precio_caja_pen, precio_six_pen, precio_plancha_pen)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (nombre, pres, cat, grupo, st, cod_barras, c_u_pen, c_u_usd, p_u_pen, p_u_usd, p_caja_pen, p_six_pen, p_plan_pen))
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (nombre, pres, cat, grupo, st, cod_barras, siguiente_orden, c_u_pen, c_u_usd, p_u_pen, p_u_usd, p_caja_pen, p_six_pen, p_plan_pen))
 
             self.cargar_datos_inventario()
             self.page.open(ft.SnackBar(ft.Text("✅ Excel procesado e inventario actualizado.", color=ft.colors.WHITE), bgcolor=ft.colors.GREEN))
@@ -322,7 +396,7 @@ class InventarioView(ft.Container):
     # --- UI PRINCIPAL ---
     def construir_interfaz(self):
         # UI Tablas
-        self.tabla_inventario = ft.DataTable(columns=[ft.DataColumn(ft.Text(h, weight=ft.FontWeight.BOLD)) for h in ["#", "Prod.", "Pres.", "Stock", "C. S/", "C. $", "P. Uni", "P. Caja", "Acc."]], rows=[])
+        self.tabla_inventario = ft.DataTable(columns=[ft.DataColumn(ft.Text(h, weight=ft.FontWeight.BOLD)) for h in ["Pos.", "Prod.", "Pres.", "Stock", "C. S/", "C. $", "P. Uni", "P. Caja", "Acc."]], rows=[])
         self.filtro_cat_inv = ft.Dropdown(options=[ft.dropdown.Option(c) for c in ["TODAS", "SOLO STOCK BAJO (<= 10)"] + self.opciones_cat], value="TODAS", label="Categoría", col={"sm": 12, "md": 4}, height=42, text_size=13, dense=True, on_change=lambda _: self.cargar_datos_inventario())
         self.filtro_nom_inv = ft.TextField(label="Buscar producto por nombre...", prefix_icon=ft.icons.SEARCH, col={"sm": 12, "md": 8}, height=42, text_size=13, dense=True, on_change=lambda e: self.cargar_datos_inventario())
         self.alerta_no_encontrado = ft.Text("❌ Producto no encontrado.", color=ft.colors.RED, visible=False)

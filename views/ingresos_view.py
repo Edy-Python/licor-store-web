@@ -377,9 +377,10 @@ class IngresosView(ft.Container):
                 cursor.execute("""
                     SELECT id_producto, nombre, presentacion, stock, costo_uni_pen, precio_uni_pen, COALESCE(codigo_barras, '')
                     FROM productos
-                    WHERE nombre LIKE %s OR codigo_barras = %s OR id_producto = %s
+                    WHERE nombre LIKE %s OR codigo_barras = %s OR id_producto = %s OR codigo_producto LIKE %s
+                    ORDER BY orden ASC
                     LIMIT 20
-                """, (f"%{texto}%", texto, texto if texto.isdigit() else -1))
+                """, (f"%{texto}%", texto, texto if texto.isdigit() else -1, f"%{texto}%"))
                 filas = cursor.fetchall()
 
             if (self.input_buscar.value or "").strip() != texto:
