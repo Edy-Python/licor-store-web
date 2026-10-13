@@ -117,8 +117,12 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         f_emision, h_emision, vendedor, c_nombre, c_dni, c_dir, t_pen, t_usd, m_pago, m_efec, m_yape, m_transf, m_tarj, vuelto, *resto = cabecera
         cond_pago = resto[0] if resto and resto[0] else "Contado"
 
-        lineas_totales_productos = sum(max(1, len(textwrap.wrap(str(d[0]), width=18))) for d in detalles)
-        alto_total = 165 + (len(detalles) * 3) + (lineas_totales_productos * 5) 
+        # Cálculo dinámico del alto del ticket
+        alto_base = 145  # Altura fija estimada (cabecera, datos cliente, totales, pagos y pie)
+        alto_por_producto = 10  # Altura promedio de la celda de cada producto
+        cantidad_productos = len(detalles)
+
+        alto_total = alto_base + (cantidad_productos * alto_por_producto)
 
         pdf = FPDF(orientation='P', unit='mm', format=(80, alto_total)) 
         pdf.set_margins(5, 5, 5) 
