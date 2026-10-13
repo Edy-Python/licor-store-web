@@ -142,7 +142,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
 
         # 2. Equilibrio del Título y Número de Nota de Venta (armonía a 11pt)
         pdf.set_font("PrimaSans", 'B', 11)
-        pdf.cell(70, 4.5, txt="NOTA DE VENTA", ln=True, align='C')
+        pdf.cell(70, 4.5, txt="Nota de Venta", ln=True, align='C')
         pdf.set_font("PrimaSans", 'B', 11)
         pdf.cell(70, 5.5, txt=codigo_ticket, ln=True, align='C')
         pdf.ln(2.5)
@@ -171,7 +171,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         pdf.set_xy(5, y_inicio_tabla)
         pdf.cell(7, alto_cabecera, txt="Cant", border=0, align='C')
         pdf.cell(8, alto_cabecera, txt="Unid", border=0, align='C')
-        pdf.cell(25, alto_cabecera, txt="Descripción", border=0, align='C')
+        pdf.cell(25, alto_cabecera, txt="Descripción", border=0, align='L')
         pdf.cell(10, alto_cabecera, txt="P.U.", border=0, align='C')
         pdf.cell(10, alto_cabecera, txt="Sub S/", border=0, align='C')
         pdf.cell(10, alto_cabecera, txt="Sub $", border=0, ln=True, align='C')
