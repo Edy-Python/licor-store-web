@@ -42,10 +42,10 @@ def _dibujar_cabecera_pdf(pdf: FPDF, conf: dict, logo_x: float = 7, logo_w: floa
 
     nom = conf.get("nombre", "").strip()
     if nom:
-        pdf.set_font("Arial", 'B', 13)
+        pdf.set_font("PrimaSans", 'B', 13)
         pdf.multi_cell(w=70, h=5, txt=nom.upper(), align='C')
 
-    pdf.set_font("Arial", size=8)
+    pdf.set_font("PrimaSans", size=8)
     ruc = conf.get("ruc", "").strip()
     if ruc:
         pdf.cell(70, 4, txt=f"RUC: {ruc}", ln=True, align='C')
@@ -57,8 +57,7 @@ def _dibujar_cabecera_pdf(pdf: FPDF, conf: dict, logo_x: float = 7, logo_w: floa
 
     ref_emp = conf.get("referencia", "").strip()
     if ref_emp:
-        texto_ref = ref_emp if ref_emp.lower().startswith("ref") else f"Ref: {ref_emp}"
-        for linea_ref in textwrap.wrap(texto_ref, width=55):
+        for linea_ref in textwrap.wrap(ref_emp, width=55):
             pdf.cell(70, 4, txt=linea_ref, ln=True, align='C')
 
     tel = conf.get("telefono", "").strip()
@@ -124,23 +123,31 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         pdf = FPDF(orientation='P', unit='mm', format=(80, alto_total)) 
         pdf.set_margins(5, 5, 5) 
         pdf.set_auto_page_break(auto=False, margin=0) 
+
+        # 1. Integración de la tipografía PrimaSans (Regular y Bold)
+        ruta_regular = os.path.join(os.getcwd(), "assets", "prima-sans.otf")
+        ruta_bold = os.path.join(os.getcwd(), "assets", "prima-sans-bold.otf")
+        pdf.add_font("PrimaSans", style="", fname=ruta_regular)
+        pdf.add_font("PrimaSans", style="B", fname=ruta_bold)
+        pdf.add_font("PrimaSans", style="I", fname=ruta_regular)
+
         pdf.add_page()
         
         # Requisito 1: Logo centrado más grande (w=66, x=7)
         _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=3)
 
-        # Requisito 2: Número de ticket resaltado drásticamente (13pt negrita)
-        pdf.set_font("Arial", 'B', 8.5)
-        pdf.cell(70, 4, txt="Nota de Venta", ln=True, align='C')
-        pdf.set_font("Arial", 'B', 13)
-        pdf.cell(70, 6, txt=codigo_ticket, ln=True, align='C')
-        pdf.ln(3)
+        # 2. Equilibrio del Título y Número de Nota de Venta (armonía a 11pt)
+        pdf.set_font("PrimaSans", 'B', 11)
+        pdf.cell(70, 4.5, txt="NOTA DE VENTA", ln=True, align='C')
+        pdf.set_font("PrimaSans", 'B', 11)
+        pdf.cell(70, 5.5, txt=codigo_ticket, ln=True, align='C')
+        pdf.ln(2.5)
         
-        # Requisito 2: Estandarización de fuente a 8pt
+        # Requisito 2: Estandarización de fuente a 8pt (regular)
         def dibujar_fila_cliente(etiqueta, valor):
-            pdf.set_font("Arial", size=8)
+            pdf.set_font("PrimaSans", size=8)
             pdf.cell(18, 4.2, txt=etiqueta, align='L')
-            pdf.set_font("Arial", size=8)
+            pdf.set_font("PrimaSans", size=8)
             pdf.cell(52, 4.2, txt=str(valor), ln=True, align='L')
 
         dibujar_fila_cliente("F. Emisión:", f_emision)
@@ -152,25 +159,27 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         
         # 1. Punto de inicio total de la tabla (Cabecera + Cuerpo)
         y_inicio_tabla = pdf.get_y()
+        alto_cabecera = 6.5
         alto_celda = 4
 
-        # 2. Imprimir Encabezados con border=0
-        pdf.set_font("Arial", 'B', 7.5)
+        # 2. Imprimir Encabezados con border=0 y altura ampliada (6.5mm)
+        pdf.set_font("PrimaSans", 'B', 7.5)
         pdf.set_xy(5, y_inicio_tabla)
-        pdf.cell(7, alto_celda, txt="Cant", border=0, align='C')
-        pdf.cell(8, alto_celda, txt="Unid", border=0, align='C')
-        pdf.cell(25, alto_celda, txt="Descripción", border=0, align='C')
-        pdf.cell(10, alto_celda, txt="P.U.", border=0, align='C')
-        pdf.cell(10, alto_celda, txt="Sub S/", border=0, align='C')
-        pdf.cell(10, alto_celda, txt="Sub $", border=0, ln=True, align='C')
+        pdf.cell(7, alto_cabecera, txt="Cant", border=0, align='C')
+        pdf.cell(8, alto_cabecera, txt="Unid", border=0, align='C')
+        pdf.cell(25, alto_cabecera, txt="Descripción", border=0, align='C')
+        pdf.cell(10, alto_cabecera, txt="P.U.", border=0, align='C')
+        pdf.cell(10, alto_cabecera, txt="Sub S/", border=0, align='C')
+        pdf.cell(10, alto_cabecera, txt="Sub $", border=0, ln=True, align='C')
 
         # 3. Imprimir Productos con border=0 (sin dibujar rectángulos ni líneas internas)
+        pdf.set_y(y_inicio_tabla + alto_cabecera)
         for det in detalles:
             lineas = textwrap.wrap(str(det[0]), width=16) or [""]
             alto_fila = len(lineas) * alto_celda
             y_fila = pdf.get_y()
 
-            pdf.set_font("Arial", '', 7)
+            pdf.set_font("PrimaSans", '', 7)
 
             pdf.set_xy(5, y_fila)
             pdf.cell(7, alto_celda, txt=str(det[1]), border=0, align='C')
@@ -200,7 +209,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         # 5. Dibujar la Cuadrícula Maestra Unificada
         pdf.set_draw_color(0, 0, 0)
         pdf.rect(5, y_inicio_tabla, 70, y_fin_tabla - y_inicio_tabla)
-        pdf.line(5, y_inicio_tabla + 4, 75, y_inicio_tabla + 4)
+        pdf.line(5, y_inicio_tabla + alto_cabecera, 75, y_inicio_tabla + alto_cabecera)
 
         pdf.line(12, y_inicio_tabla, 12, y_fin_tabla)
         pdf.line(20, y_inicio_tabla, 20, y_fin_tabla)
@@ -211,7 +220,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         pdf.ln(2)
         
         # Totales
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         if t_pen > 0:
             pdf.cell(35, 5, txt="", align='L')
             pdf.cell(23, 5, txt="Total a pagar: S/", align='R')
@@ -227,56 +236,56 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
             entero = int(t_pen)
             centimos = int(round((t_pen - entero) * 100))
             texto_pen = num2words(entero, lang='es').capitalize()
-            pdf.set_font("Arial", size=8)
+            pdf.set_font("PrimaSans", size=8)
             pdf.write(4, "Son: ")
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.write(4, f"{texto_pen} con {centimos:02d}/100 Soles\n")
         
         if t_usd > 0:
             entero_usd = int(t_usd)
             centimos_usd = int(round((t_usd - entero_usd) * 100))
             texto_usd = num2words(entero_usd, lang='es').capitalize()
-            pdf.set_font("Arial", size=8)
+            pdf.set_font("PrimaSans", size=8)
             pdf.write(4, "Son: ")
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.write(4, f"{texto_usd} con {centimos_usd:02d}/100 Dólares Americanos\n")
         
         pdf.ln(2)
         
         # Datos de pago y cierre estandarizados a 8pt
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.write(4.5, "Condición de Pago: ")
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.write(4.5, f"{str(cond_pago).capitalize()}\n")
         
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.cell(70, 4.5, txt="Pagos:", ln=True, align='L')
         
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         if m_efec > 0: 
-            pdf.cell(70, 4.2, txt=f"- Efectivo - S/ {m_efec:.2f}", ln=True, align='L')
+            pdf.cell(70, 4.2, txt=f"• Efectivo - S/ {m_efec:.2f}", ln=True, align='L')
         if m_yape > 0: 
-            pdf.cell(70, 4.2, txt=f"- Yape - S/ {m_yape:.2f}", ln=True, align='L')
+            pdf.cell(70, 4.2, txt=f"• Yape - S/ {m_yape:.2f}", ln=True, align='L')
         if m_transf > 0: 
-            pdf.cell(70, 4.2, txt=f"- Transferencia - S/ {m_transf:.2f}", ln=True, align='L')
+            pdf.cell(70, 4.2, txt=f"• Transferencia - S/ {m_transf:.2f}", ln=True, align='L')
         if m_tarj > 0: 
-            pdf.cell(70, 4.2, txt=f"- Tarjeta - S/ {m_tarj:.2f}", ln=True, align='L')
+            pdf.cell(70, 4.2, txt=f"• Tarjeta - S/ {m_tarj:.2f}", ln=True, align='L')
         if t_usd > 0: 
-            pdf.cell(70, 4.2, txt=f"- Dólares - $ {t_usd:.2f}", ln=True, align='L')
+            pdf.cell(70, 4.2, txt=f"• Dólares - $ {t_usd:.2f}", ln=True, align='L')
 
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.write(4.5, "Vuelto: ")
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.write(4.5, f"S/ {vuelto:.2f}\n")
 
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.write(4.5, "Vendedor: ")
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.write(4.5, f"{str(vendedor).upper()}\n")
 
         if c_msg_emp and str(c_msg_emp).strip():
             pdf.ln(4)
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.cell(70, 4.5, txt=str(c_msg_emp).strip(), ln=True, align='C')
 
         dir_base = os.path.dirname(os.path.abspath(__file__))
@@ -324,13 +333,21 @@ def exportar_recibo_abono_pdf(page: ft.Page, id_pago):
         pdf = FPDF(orientation='P', unit='mm', format=(80, 175))
         pdf.set_margins(5, 5, 5)
         pdf.set_auto_page_break(auto=False, margin=0)
+
+        # Integración de la tipografía PrimaSans (Regular y Bold)
+        ruta_regular = os.path.join(os.getcwd(), "assets", "prima-sans.otf")
+        ruta_bold = os.path.join(os.getcwd(), "assets", "prima-sans-bold.otf")
+        pdf.add_font("PrimaSans", style="", fname=ruta_regular)
+        pdf.add_font("PrimaSans", style="B", fname=ruta_bold)
+        pdf.add_font("PrimaSans", style="I", fname=ruta_regular)
+
         pdf.add_page()
 
         _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=2)
 
-        pdf.set_font("Arial", 'B', 10.5)
+        pdf.set_font("PrimaSans", 'B', 10.5)
         pdf.cell(70, 5, txt="RECIBO DE ABONO / COBRANZA", ln=True, align='C')
-        pdf.set_font("Arial", 'B', 8.5)
+        pdf.set_font("PrimaSans", 'B', 8.5)
         pdf.cell(70, 4.5, txt=f"N° RECIBO: ABON-{p_id:06d}", ln=True, align='C')
         pdf.ln(2)
 
@@ -340,9 +357,9 @@ def exportar_recibo_abono_pdf(page: ft.Page, id_pago):
         pdf.ln(2)
 
         def fila_rec_info(etiqueta, valor):
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.cell(24, 4.5, txt=etiqueta, align='L')
-            pdf.set_font("Arial", size=8)
+            pdf.set_font("PrimaSans", size=8)
             pdf.cell(46, 4.5, txt=str(valor), ln=True, align='L')
 
         fila_rec_info("Fecha / Hora:", f"{p_fecha} {p_hora}")
@@ -357,16 +374,16 @@ def exportar_recibo_abono_pdf(page: ft.Page, id_pago):
         pdf.line(5, y_actual, 75, y_actual)
         pdf.ln(2)
 
-        pdf.set_font("Arial", 'B', 9.5)
+        pdf.set_font("PrimaSans", 'B', 9.5)
         pdf.cell(40, 5, txt="MONTO ABONADO:", align='L')
         pdf.cell(30, 5, txt=f"S/ {p_monto:.2f}", ln=True, align='R')
 
         entero = int(p_monto)
         centimos = int(round((p_monto - entero) * 100))
         texto_pen = num2words(entero, lang='es').capitalize()
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.write(4, "Son: ")
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.write(4, f"{texto_pen} con {centimos:02d}/100 Soles\n")
 
         pdf.ln(2)
@@ -377,33 +394,33 @@ def exportar_recibo_abono_pdf(page: ft.Page, id_pago):
         pdf.line(5, y_actual, 75, y_actual)
         pdf.ln(2)
 
-        pdf.set_font("Arial", 'B', 8.5)
+        pdf.set_font("PrimaSans", 'B', 8.5)
         pdf.cell(70, 4.5, txt="ESTADO DE LA DEUDA:", ln=True, align='L')
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.cell(45, 4.5, txt="Total Venta Original:", align='L')
         pdf.cell(25, 4.5, txt=f"S/ {v_total:.2f}", ln=True, align='R')
         pdf.cell(45, 4.5, txt="Saldo Anterior:", align='L')
         pdf.cell(25, 4.5, txt=f"S/ {saldo_anterior:.2f}", ln=True, align='R')
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.cell(45, 4.5, txt="(-) Abono Realizado:", align='L')
         pdf.cell(25, 4.5, txt=f"S/ {p_monto:.2f}", ln=True, align='R')
-        pdf.set_font("Arial", 'B', 8.5)
+        pdf.set_font("PrimaSans", 'B', 8.5)
         pdf.cell(45, 5, txt="(=) SALDO RESTANTE:", align='L')
         pdf.cell(25, 5, txt=f"S/ {saldo_restante:.2f}", ln=True, align='R')
 
         if p_obs and str(p_obs).strip():
             pdf.ln(2)
-            pdf.set_font("Arial", 'I', 8)
+            pdf.set_font("PrimaSans", 'I', 8)
             pdf.cell(70, 4, txt=f"Nota: {p_obs[:50]}", ln=True, align='L')
 
         pdf.ln(6)
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.cell(70, 4, txt="____________________________", ln=True, align='C')
         pdf.cell(70, 4, txt="Firma / Sello de Conformidad", ln=True, align='C')
 
         if c_msg_emp and str(c_msg_emp).strip():
             pdf.ln(3)
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.cell(70, 4.5, txt=str(c_msg_emp).strip(), ln=True, align='C')
 
         dir_base = os.path.dirname(os.path.abspath(__file__))
@@ -444,13 +461,21 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
         pdf = FPDF(orientation='P', unit='mm', format=(80, 210))
         pdf.set_margins(5, 5, 5)
         pdf.set_auto_page_break(auto=False, margin=0)
+
+        # Integración de la tipografía PrimaSans (Regular y Bold)
+        ruta_regular = os.path.join(os.getcwd(), "assets", "prima-sans.otf")
+        ruta_bold = os.path.join(os.getcwd(), "assets", "prima-sans-bold.otf")
+        pdf.add_font("PrimaSans", style="", fname=ruta_regular)
+        pdf.add_font("PrimaSans", style="B", fname=ruta_bold)
+        pdf.add_font("PrimaSans", style="I", fname=ruta_regular)
+
         pdf.add_page()
 
         _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=2)
 
-        pdf.set_font("Arial", 'B', 10.5)
+        pdf.set_font("PrimaSans", 'B', 10.5)
         pdf.cell(70, 5, txt="CIERRE Y ARQUEO DE CAJA", ln=True, align='C')
-        pdf.set_font("Arial", 'B', 8.5)
+        pdf.set_font("PrimaSans", 'B', 8.5)
         pdf.cell(70, 4.5, txt=f"TURNO N°: CC-{c_id:05d}", ln=True, align='C')
         pdf.ln(2)
 
@@ -460,17 +485,17 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
         pdf.ln(2)
 
         def fila_cie_item(etiqueta, valor, negrita=False, tam=8):
-            pdf.set_font("Arial", 'B' if negrita else '', tam)
+            pdf.set_font("PrimaSans", 'B' if negrita else '', tam)
             pdf.cell(48, 4.5, txt=etiqueta, align='L')
             pdf.cell(22, 4.5, txt=str(valor), ln=True, align='R')
 
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.cell(24, 4.5, txt="Fecha / Hora:", align='L')
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.cell(46, 4.5, txt=f"{c_fecha} {c_hora}", ln=True, align='L')
-        pdf.set_font("Arial", 'B', 8)
+        pdf.set_font("PrimaSans", 'B', 8)
         pdf.cell(24, 4.5, txt="Responsable:", align='L')
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.cell(46, 4.5, txt=f"{str(c_usr).upper()}", ln=True, align='L')
         pdf.ln(2)
 
@@ -479,7 +504,7 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
         pdf.line(5, y_actual, 75, y_actual)
         pdf.ln(2)
 
-        pdf.set_font("Arial", 'B', 8.5)
+        pdf.set_font("PrimaSans", 'B', 8.5)
         pdf.cell(70, 4.5, txt="MOVIMIENTOS DE EFECTIVO (CAJA):", ln=True, align='L')
         fila_cie_item("(+) Base Inicial Apertura:", f"S/ {float(c_ape):.2f}")
         fila_cie_item("(+) Ventas en Efectivo:", f"S/ {float(c_vef):.2f}")
@@ -503,7 +528,7 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
         pdf.line(5, y_actual, 75, y_actual)
         pdf.ln(2)
 
-        pdf.set_font("Arial", 'B', 8.5)
+        pdf.set_font("PrimaSans", 'B', 8.5)
         pdf.cell(70, 4.5, txt="VENTAS EN OTROS MEDIOS (BANCOS):", ln=True, align='L')
         fila_cie_item("Yape:", f"S/ {float(c_vyp):.2f}")
         fila_cie_item("Transferencias:", f"S/ {float(c_vtr):.2f}")
@@ -512,20 +537,20 @@ def exportar_cierre_turno_pdf(page: ft.Page, id_cierre):
 
         if c_obs and str(c_obs).strip():
             pdf.ln(2)
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.cell(70, 4, txt="Observaciones:", ln=True, align='L')
-            pdf.set_font("Arial", size=8)
+            pdf.set_font("PrimaSans", size=8)
             for l_obs in textwrap.wrap(str(c_obs).strip(), width=45):
                 pdf.cell(70, 3.8, txt=l_obs, ln=True, align='L')
 
         pdf.ln(8)
-        pdf.set_font("Arial", size=8)
+        pdf.set_font("PrimaSans", size=8)
         pdf.cell(70, 4, txt="____________________________", ln=True, align='C')
         pdf.cell(70, 4, txt="Firma de Conformidad del Cajero", ln=True, align='C')
 
         if c_msg_emp and str(c_msg_emp).strip():
             pdf.ln(3)
-            pdf.set_font("Arial", 'B', 8)
+            pdf.set_font("PrimaSans", 'B', 8)
             pdf.cell(70, 4.5, txt=str(c_msg_emp).strip(), ln=True, align='C')
 
         dir_base = os.path.dirname(os.path.abspath(__file__))
