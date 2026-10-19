@@ -140,19 +140,19 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         # Requisito 1: Logo centrado más grande (w=66, x=7)
         _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=3)
 
-        # 2. Equilibrio del Título y Número de Nota de Venta (armonía a 11pt)
-        pdf.set_font("PrimaSans", 'B', 11)
-        pdf.cell(70, 4.5, txt="Nota de Venta", ln=True, align='C')
-        pdf.set_font("PrimaSans", 'B', 11)
-        pdf.cell(70, 5.5, txt=codigo_ticket, ln=True, align='C')
+        # 2. Equilibrio del Título y Número de Nota de Venta (tamaños reducidos en 2pt)
+        pdf.set_font("PrimaSans", 'B', 10)
+        pdf.cell(70, 4.2, txt="NOTA DE VENTA", ln=True, align='C')
+        pdf.set_font("PrimaSans", 'B', 9)
+        pdf.cell(70, 5.0, txt=codigo_ticket, ln=True, align='C')
         pdf.ln(2.5)
         
-        # Requisito 2: Estandarización de fuente a 8pt (regular)
+        # Requisito 2: Estandarización de fuente a 8pt (regular) con separación de un espacio
         def dibujar_fila_cliente(etiqueta, valor):
             pdf.set_font("PrimaSans", size=8)
-            pdf.cell(18, 4.2, txt=etiqueta, align='L')
-            pdf.set_font("PrimaSans", size=8)
-            pdf.cell(52, 4.2, txt=str(valor), ln=True, align='L')
+            w_lbl = pdf.get_string_width(f"{etiqueta} ")
+            pdf.cell(w_lbl, 4.2, txt=etiqueta, align='L')
+            pdf.cell(70 - w_lbl, 4.2, txt=str(valor), ln=True, align='L')
 
         dibujar_fila_cliente("F. Emisión:", f_emision)
         dibujar_fila_cliente("H. Emisión:", h_emision)
