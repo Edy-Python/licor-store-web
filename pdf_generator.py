@@ -140,25 +140,24 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         # Requisito 1: Logo centrado más grande (w=66, x=7)
         _dibujar_cabecera_pdf(pdf, conf_empresa, logo_x=7, logo_w=66, espacio_post=3)
 
-        # 2. Equilibrio del Título y Número de Nota de Venta (tamaños reducidos en 2pt)
+        # 2. Equilibrio del Título y Número de Nota de Venta (ambos al mismo tamaño: 10pt)
         pdf.set_font("PrimaSans", 'B', 10)
-        pdf.cell(70, 4.2, txt="NOTA DE VENTA", ln=True, align='C')
-        pdf.set_font("PrimaSans", 'B', 9)
-        pdf.cell(70, 5.0, txt=codigo_ticket, ln=True, align='C')
+        pdf.cell(70, 4.2, txt="Nota De Venta", ln=True, align='C')
+        pdf.set_font("PrimaSans", 'B', 10)
+        pdf.cell(70, 4.8, txt=codigo_ticket, ln=True, align='C')
         pdf.ln(2.5)
         
-        # Requisito 2: Estandarización de fuente a 8pt (regular) con separación de un espacio
+        # Requisito 2: Estandarización tabular de datos del cliente (alineación vertical de dos puntos)
         def dibujar_fila_cliente(etiqueta, valor):
             pdf.set_font("PrimaSans", size=8)
-            w_lbl = pdf.get_string_width(f"{etiqueta} ")
-            pdf.cell(w_lbl, 4.2, txt=etiqueta, align='L')
-            pdf.cell(70 - w_lbl, 4.2, txt=str(valor), ln=True, align='L')
+            pdf.cell(20, 4.2, txt=str(etiqueta).rstrip(':'), ln=0, align='L')
+            pdf.cell(0, 4.2, txt=f": {str(valor)}", ln=1, align='L')
 
-        dibujar_fila_cliente("F. Emisión:", f_emision)
-        dibujar_fila_cliente("H. Emisión:", h_emision)
-        dibujar_fila_cliente("Cliente:", c_nombre if c_nombre else 'VARIOS')
-        dibujar_fila_cliente("DNI:", c_dni if c_dni else '00000000')
-        dibujar_fila_cliente("Dirección:", c_dir[:40] if c_dir else 'Tacna')
+        dibujar_fila_cliente("F. Emisión", f_emision)
+        dibujar_fila_cliente("H. Emisión", h_emision)
+        dibujar_fila_cliente("Cliente", c_nombre if c_nombre else 'VARIOS')
+        dibujar_fila_cliente("DNI", c_dni if c_dni else '00000000')
+        dibujar_fila_cliente("Dirección", c_dir[:40] if c_dir else 'Tacna')
         pdf.ln(3)
         
         # 1. Punto de inicio total de la tabla (Cabecera + Cuerpo)
