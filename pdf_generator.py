@@ -151,7 +151,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         margen_izquierdo_tabla = 5
         w_etiqueta_cliente = 16
 
-        def dibujar_fila_cliente(etiqueta, valor, tam_val=7):
+        def dibujar_fila_cliente(etiqueta, valor, tam_val=7.5):
             pdf.set_x(margen_izquierdo_tabla)
             pdf.set_font("PrimaSans", size=7)
             pdf.cell(w_etiqueta_cliente, 3.8, txt=f"{str(etiqueta).rstrip(':')}:", ln=0, align='L')
@@ -172,7 +172,7 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         dibujar_fila_cliente("H. Emisión", h_emision)
         dibujar_fila_cliente("Cliente", c_nombre if c_nombre else 'VARIOS')
         dibujar_fila_cliente("DNI", c_dni if c_dni else '00000000')
-        dibujar_fila_cliente("Dirección", c_dir if c_dir else 'Tacna', tam_val=9)
+        dibujar_fila_cliente("Dirección", c_dir if c_dir else 'Tacna')
         pdf.ln(3)
         
         # 1. Punto de inicio total de la tabla (Cabecera + Cuerpo)
