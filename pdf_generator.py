@@ -147,17 +147,32 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
         pdf.cell(70, 4.8, txt=codigo_ticket, ln=True, align='C')
         pdf.ln(2.5)
         
-        # Requisito 2: Estandarización tabular de datos del cliente (alineación vertical de dos puntos)
-        def dibujar_fila_cliente(etiqueta, valor):
-            pdf.set_font("PrimaSans", size=8)
-            pdf.cell(20, 4.2, txt=str(etiqueta).rstrip(':'), ln=0, align='L')
-            pdf.cell(0, 4.2, txt=f": {str(valor)}", ln=1, align='L')
+        # Requisito 2: Estandarización tabular de datos del cliente (alineación uniforme y tamaños calibrados)
+        margen_izquierdo_tabla = 5
+        w_etiqueta_cliente = 16
+
+        def dibujar_fila_cliente(etiqueta, valor, tam_val=7):
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.set_font("PrimaSans", size=7)
+            pdf.cell(w_etiqueta_cliente, 3.8, txt=f"{str(etiqueta).rstrip(':')}:", ln=0, align='L')
+            
+            pdf.set_font("PrimaSans", size=tam_val)
+            alto_fila = 4.2 if tam_val > 7 else 3.8
+            val_str = str(valor)
+            if tam_val > 7 and len(val_str) > 30:
+                lineas = textwrap.wrap(val_str, width=30)
+                pdf.cell(0, alto_fila, txt=f" {lineas[0]}", ln=1, align='L')
+                for l_extra in lineas[1:]:
+                    pdf.set_x(margen_izquierdo_tabla + w_etiqueta_cliente)
+                    pdf.cell(0, alto_fila, txt=f" {l_extra}", ln=1, align='L')
+            else:
+                pdf.cell(0, alto_fila, txt=f" {val_str}", ln=1, align='L')
 
         dibujar_fila_cliente("F. Emisión", f_emision)
         dibujar_fila_cliente("H. Emisión", h_emision)
         dibujar_fila_cliente("Cliente", c_nombre if c_nombre else 'VARIOS')
         dibujar_fila_cliente("DNI", c_dni if c_dni else '00000000')
-        dibujar_fila_cliente("Dirección", c_dir[:40] if c_dir else 'Tacna')
+        dibujar_fila_cliente("Dirección", c_dir if c_dir else 'Tacna', tam_val=9)
         pdf.ln(3)
         
         # 1. Punto de inicio total de la tabla (Cabecera + Cuerpo)
@@ -222,16 +237,18 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
 
         pdf.ln(2)
         
-        # Totales
-        pdf.set_font("PrimaSans", 'B', 8)
+        # Totales alineados al margen izquierdo de la tabla y reducidos a 7pt
+        pdf.set_font("PrimaSans", 'B', 7)
         if t_pen > 0:
-            pdf.cell(35, 5, txt="", align='L')
-            pdf.cell(23, 5, txt="Total a pagar: S/", align='R')
-            pdf.cell(12, 5, txt=f"{t_pen:.2f}", ln=True, align='R')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(35, 4.5, txt="", align='L')
+            pdf.cell(23, 4.5, txt="Total a pagar: S/", align='R')
+            pdf.cell(12, 4.5, txt=f"{t_pen:.2f}", ln=True, align='R')
         if t_usd > 0:
-            pdf.cell(35, 5, txt="", align='L')
-            pdf.cell(23, 5, txt="Total a pagar: $", align='R')
-            pdf.cell(12, 5, txt=f"{t_usd:.2f}", ln=True, align='R')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(35, 4.5, txt="", align='L')
+            pdf.cell(23, 4.5, txt="Total a pagar: $", align='R')
+            pdf.cell(12, 4.5, txt=f"{t_usd:.2f}", ln=True, align='R')
             
         pdf.ln(2)
         
@@ -239,57 +256,69 @@ def exportar_ticket_pdf(page: ft.Page, id_venta, codigo_ticket):
             entero = int(t_pen)
             centimos = int(round((t_pen - entero) * 100))
             texto_pen = num2words(entero, lang='es').capitalize()
-            pdf.set_font("PrimaSans", size=8)
-            pdf.write(4, "Son: ")
-            pdf.set_font("PrimaSans", 'B', 8)
-            pdf.write(4, f"{texto_pen} con {centimos:02d}/100 Soles\n")
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.set_font("PrimaSans", size=7)
+            pdf.write(3.8, "Son: ")
+            pdf.set_font("PrimaSans", 'B', 7)
+            pdf.write(3.8, f"{texto_pen} con {centimos:02d}/100 Soles\n")
         
         if t_usd > 0:
             entero_usd = int(t_usd)
             centimos_usd = int(round((t_usd - entero_usd) * 100))
             texto_usd = num2words(entero_usd, lang='es').capitalize()
-            pdf.set_font("PrimaSans", size=8)
-            pdf.write(4, "Son: ")
-            pdf.set_font("PrimaSans", 'B', 8)
-            pdf.write(4, f"{texto_usd} con {centimos_usd:02d}/100 Dólares Americanos\n")
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.set_font("PrimaSans", size=7)
+            pdf.write(3.8, "Son: ")
+            pdf.set_font("PrimaSans", 'B', 7)
+            pdf.write(3.8, f"{texto_usd} con {centimos_usd:02d}/100 Dólares Americanos\n")
         
         pdf.ln(2)
         
-        # Datos de pago y cierre estandarizados a 8pt
-        pdf.set_font("PrimaSans", 'B', 8)
-        pdf.write(4.5, "Condición de Pago: ")
-        pdf.set_font("PrimaSans", size=8)
-        pdf.write(4.5, f"{str(cond_pago).capitalize()}\n")
+        # Datos de pago y cierre estandarizados a 7pt y alineados al margen de la tabla
+        pdf.set_x(margen_izquierdo_tabla)
+        pdf.set_font("PrimaSans", 'B', 7)
+        pdf.write(4, "Condición de Pago: ")
+        pdf.set_font("PrimaSans", size=7)
+        pdf.write(4, f"{str(cond_pago).capitalize()}\n")
         
-        pdf.set_font("PrimaSans", 'B', 8)
-        pdf.cell(70, 4.5, txt="Pagos:", ln=True, align='L')
+        pdf.set_x(margen_izquierdo_tabla)
+        pdf.set_font("PrimaSans", 'B', 7)
+        pdf.cell(70, 4, txt="Pagos:", ln=True, align='L')
         
-        pdf.set_font("PrimaSans", size=8)
+        pdf.set_font("PrimaSans", size=7)
         if m_efec > 0: 
-            pdf.cell(70, 4.2, txt=f"• Efectivo - S/ {m_efec:.2f}", ln=True, align='L')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(70, 3.8, txt=f"• Efectivo - S/ {m_efec:.2f}", ln=True, align='L')
         if m_yape > 0: 
-            pdf.cell(70, 4.2, txt=f"• Yape - S/ {m_yape:.2f}", ln=True, align='L')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(70, 3.8, txt=f"• Yape - S/ {m_yape:.2f}", ln=True, align='L')
         if m_transf > 0: 
-            pdf.cell(70, 4.2, txt=f"• Transferencia - S/ {m_transf:.2f}", ln=True, align='L')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(70, 3.8, txt=f"• Transferencia - S/ {m_transf:.2f}", ln=True, align='L')
         if m_tarj > 0: 
-            pdf.cell(70, 4.2, txt=f"• Tarjeta - S/ {m_tarj:.2f}", ln=True, align='L')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(70, 3.8, txt=f"• Tarjeta - S/ {m_tarj:.2f}", ln=True, align='L')
         if t_usd > 0: 
-            pdf.cell(70, 4.2, txt=f"• Dólares - $ {t_usd:.2f}", ln=True, align='L')
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.cell(70, 3.8, txt=f"• Dólares - $ {t_usd:.2f}", ln=True, align='L')
 
-        pdf.set_font("PrimaSans", 'B', 8)
-        pdf.write(4.5, "Vuelto: ")
-        pdf.set_font("PrimaSans", size=8)
-        pdf.write(4.5, f"S/ {vuelto:.2f}\n")
+        pdf.set_x(margen_izquierdo_tabla)
+        pdf.set_font("PrimaSans", 'B', 7)
+        pdf.write(4, "Vuelto: ")
+        pdf.set_font("PrimaSans", size=7)
+        pdf.write(4, f"S/ {vuelto:.2f}\n")
 
-        pdf.set_font("PrimaSans", 'B', 8)
-        pdf.write(4.5, "Vendedor: ")
-        pdf.set_font("PrimaSans", size=8)
-        pdf.write(4.5, f"{str(vendedor).upper()}\n")
+        pdf.set_x(margen_izquierdo_tabla)
+        pdf.set_font("PrimaSans", 'B', 7)
+        pdf.write(4, "Vendedor: ")
+        pdf.set_font("PrimaSans", size=7)
+        pdf.write(4, f"{str(vendedor).upper()}\n")
 
         if c_msg_emp and str(c_msg_emp).strip():
-            pdf.ln(4)
-            pdf.set_font("PrimaSans", 'B', 8)
-            pdf.cell(70, 4.5, txt=str(c_msg_emp).strip(), ln=True, align='C')
+            pdf.ln(3)
+            pdf.set_x(margen_izquierdo_tabla)
+            pdf.set_font("PrimaSans", 'B', 7)
+            pdf.cell(70, 4, txt=str(c_msg_emp).strip(), ln=True, align='C')
 
         dir_base = os.path.dirname(os.path.abspath(__file__))
         ruta_pdf = os.path.join(dir_base, "assets", f"{codigo_ticket}.pdf")
